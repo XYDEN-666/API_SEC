@@ -21,8 +21,8 @@ import time
 
 import pytest
 import uvicorn
-from fastapi import FastAPI, Response
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.models import Endpoint, Target
 from app.scanners.base import Confidence, Finding, Severity
@@ -160,6 +160,35 @@ def http_sqli_target():
         base_url, server, thread = _start_server(app)
         started.append((server, thread))
         return base_url
+
+    yield _start
+
+    for server, thread in started:
+        server.should_exit = True
+        thread.join(timeout=10)
+
+
+@pytest.fixture
+def http_idor_target():
+    """Fixture target with an object-identifier endpoint that distinguishes
+    identities via the X-API-Key header, plus a request log."""
+    started: list[tuple[uvicorn.Server, threading.Thread]] = []
+
+    def _start() -> tuple[str, list]:
+        hits: list[tuple[str, str | None]] = []
+        app = FastAPI()
+
+        @app.get("/users/{user_id}")
+        def user(user_id: str, request: Request):
+            api_key = request.headers.get("x-api-key")
+            hits.append((request.url.path, api_key))
+            if api_key == "admin-secret":
+                return {"id": user_id, "ok": True}
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+
+        base_url, server, thread = _start_server(app)
+        started.append((server, thread))
+        return base_url, hits
 
     yield _start
 

@@ -14,6 +14,7 @@ from app.main import create_app
 from tests.scanner_harness import (  # noqa: F401 - fixture registration
     http_target,
     http_target_factory,
+    http_idor_target,
     http_sqli_target,
 )
 from tests.helpers import cleanup_test_users

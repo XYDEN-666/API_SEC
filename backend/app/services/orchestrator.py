@@ -100,6 +100,8 @@ class ScanOrchestrator:
         findings: list[Finding] = []
         scan_errors = 0
         for scanner in self.scanners:
+            # Provide the full credential set for multi-identity scanners.
+            scanner.credentials = credentials
             for endpoint in endpoints:
                 try:
                     scanner_findings = await asyncio.wait_for(
@@ -150,6 +152,12 @@ class ScanOrchestrator:
                     )
                     continue
                 findings.extend(scanner_findings)
+                response_data: dict[str, object] = {
+                    "findings_count": len(scanner_findings)
+                }
+                summary = getattr(scanner, "evidence_summary", None)
+                if summary:
+                    response_data["summary"] = summary
                 session.add(
                     Evidence(
                         scan_id=scan.id,
@@ -158,9 +166,7 @@ class ScanOrchestrator:
                             f"{endpoint.method} "
                             f"{target.base_url}{endpoint.path}"
                         ),
-                        response_data=json.dumps(
-                            {"findings_count": len(scanner_findings)}
-                        ),
+                        response_data=json.dumps(response_data),
                     )
                 )
 
