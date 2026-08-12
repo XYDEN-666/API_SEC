@@ -1,4 +1,6 @@
-"""Authentication routes: registration and login."""
+"""Authentication routes: registration, login, and current user."""
+
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -6,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.deps import get_current_user
 from app.core.security import (
     create_access_token,
     hash_password,
@@ -68,3 +71,11 @@ async def login(
         )
 
     return TokenResponse(access_token=create_access_token(user.id))
+
+
+@router.get("/me", response_model=UserResponse)
+async def read_me(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Return the authenticated user, including their role."""
+    return current_user
