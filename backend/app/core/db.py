@@ -1,4 +1,6 @@
-"""Async SQLAlchemy engine and session factory for PostgreSQL."""
+"""Async SQLAlchemy engine, session factory, and FastAPI dependency."""
+
+from collections.abc import AsyncIterator
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -20,6 +22,12 @@ async_session_factory = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """FastAPI dependency that yields an async database session."""
+    async with async_session_factory() as session:
+        yield session
 
 
 async def ping_database() -> None:

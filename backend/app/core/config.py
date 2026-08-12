@@ -14,8 +14,10 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://redis:6379/0"
 
-    # Replace in production; real auth work will rotate this via secrets.
-    secret_key: str = "change-me"
+    # Development-only default (>=32 bytes for HS256). Override with a strong
+    # secret in production; real deployments must rotate this via secrets.
+    secret_key: str = "dev-only-apishield-secret-key-change-me-0123456789abcdef"
+    access_token_expire_minutes: int = 60
 
 
 settings = Settings()
