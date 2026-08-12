@@ -97,14 +97,25 @@ def http_target_factory():
     """Start HTTP targets that return a configurable set of response headers."""
     started: list[tuple[uvicorn.Server, threading.Thread]] = []
 
-    def _start(headers: dict[str, str]) -> str:
+    def _start(
+        headers: dict[str, str] | None = None,
+        allow_methods: list[str] | None = None,
+    ) -> str:
         app = FastAPI()
 
         @app.get("/")
         def root(response: Response) -> dict[str, bool]:
-            for name, value in headers.items():
+            for name, value in (headers or {}).items():
                 response.headers[name] = value
             return {"ok": True}
+
+        for method in allow_methods or []:
+            app.add_api_route(
+                "/",
+                lambda: {"ok": True},
+                methods=[method],
+                name=f"extra_{method.lower()}",
+            )
 
         base_url, server, thread = _start_server(app)
         started.append((server, thread))
