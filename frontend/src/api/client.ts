@@ -26,6 +26,20 @@ export interface LoginResponse {
   token_type: string;
 }
 
+export interface Project {
+  id: number;
+  name: string;
+  owner_id: number;
+  created_at: string;
+}
+
+export interface Target {
+  id: number;
+  project_id: number;
+  base_url: string;
+  name: string;
+}
+
 let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null): void {
@@ -94,4 +108,39 @@ export async function login(
 export async function getMe(): Promise<User> {
   const response = await apiFetch("/auth/me");
   return (await response.json()) as User;
+}
+
+export async function listProjects(): Promise<Project[]> {
+  const response = await apiFetch("/projects");
+  return (await response.json()) as Project[];
+}
+
+export async function createProject(name: string): Promise<Project> {
+  const response = await apiFetch("/projects", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+  return (await response.json()) as Project;
+}
+
+export async function getProject(projectId: number): Promise<Project> {
+  const response = await apiFetch(`/projects/${projectId}`);
+  return (await response.json()) as Project;
+}
+
+export async function listTargets(projectId: number): Promise<Target[]> {
+  const response = await apiFetch(`/projects/${projectId}/targets`);
+  return (await response.json()) as Target[];
+}
+
+export async function createTarget(
+  projectId: number,
+  name: string,
+  baseUrl: string,
+): Promise<Target> {
+  const response = await apiFetch(`/projects/${projectId}/targets`, {
+    method: "POST",
+    body: JSON.stringify({ name, base_url: baseUrl }),
+  });
+  return (await response.json()) as Target;
 }
