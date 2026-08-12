@@ -52,8 +52,10 @@ touched.
    assumption it works — run the check first.
 4. Stage and commit with message format: `task X.X: <short description>`. One commit
    per task, not several.
-5. Stop there. Do NOT merge into main, do NOT push, and do NOT delete the branch —
-   those stay manual, they're the review checkpoint.
+5. Once the acceptance check passes, finish the flow automatically: merge the task
+   branch into `main` (fast-forward preferred), push `main`, and delete the task
+   branch locally and on the remote. Do NOT merge or push unless the acceptance
+   check actually passed.
 
 ## When blocked
 Stop and summarize what's blocking you rather than guessing at scope or
