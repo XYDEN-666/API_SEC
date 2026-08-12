@@ -11,6 +11,7 @@ from sqlalchemy.pool import NullPool
 import app.core.db as db_module
 from app.core.config import settings
 from app.main import create_app
+from tests.scanner_harness import http_target  # noqa: F401 - fixture registration
 from tests.helpers import cleanup_test_users
 
 
