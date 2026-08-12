@@ -68,6 +68,8 @@ def test_alembic_upgrade_head_creates_project_tables_with_fks() -> None:
                     "authorization_records",
                     "endpoints",
                     "credentials",
+                    "scans",
+                    "evidence",
                 ):
                     exists = (
                         await connection.execute(
@@ -86,6 +88,8 @@ def test_alembic_upgrade_head_creates_project_tables_with_fks() -> None:
                     ),
                     "endpoints": "FOREIGN KEY (target_id) REFERENCES targets(id)",
                     "credentials": "FOREIGN KEY (target_id) REFERENCES targets(id)",
+                    "scans": "FOREIGN KEY (target_id) REFERENCES targets(id)",
+                    "evidence": "FOREIGN KEY (scan_id) REFERENCES scans(id)",
                 }
                 for table, expected in expected_fks.items():
                     rows = (

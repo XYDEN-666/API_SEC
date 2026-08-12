@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
-from app.models import Target
+from app.models import Evidence, Scan, Target
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
 from app.services.orchestrator import ScanOrchestrator
 
@@ -88,6 +88,15 @@ def test_orchestrator_with_zero_scanners_returns_empty_result(
                 assert target is not None
                 result = await ScanOrchestrator().run_scan(target, session)
                 assert result.findings == []
+                assert result.scan_id > 0
+
+                # The scan row must exist with status "completed".
+                scan = await session.get(Scan, result.scan_id)
+                assert scan is not None
+                assert scan.status == "completed"
+                assert scan.finished_at is not None
+                evidence = (await session.scalars(select(Evidence))).all()
+                assert evidence == []
         finally:
             await engine.dispose()
 
@@ -134,6 +143,18 @@ def test_orchestrator_collects_findings_and_survives_broken_scanner(
                 assert len(result.findings) == 1
                 assert result.findings[0].title == "Echo finding"
                 assert result.findings[0].evidence == "GET /health"
+
+                # Evidence was persisted for the echo scanner only.
+                scan = await session.get(Scan, result.scan_id)
+                assert scan is not None
+                assert scan.status == "completed"
+                evidence = (
+                    await session.scalars(
+                        select(Evidence).where(Evidence.scan_id == scan.id)
+                    )
+                ).all()
+                assert len(evidence) == 1
+                assert evidence[0].scanner_name == "echo"
         finally:
             await engine.dispose()
 

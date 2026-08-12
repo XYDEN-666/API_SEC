@@ -1,13 +1,16 @@
-"""Scan orchestration: drives registered scanners across a target's endpoints."""
+"""Scan orchestration: drives registered scanners across a target's endpoints
+and persists scan/evidence records."""
 
+import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Credential, Endpoint, Target
+from app.models import Credential, Endpoint, Evidence, Scan, Target
 from app.scanners.base import BaseScanner, Finding
 
 logger = logging.getLogger("apishield.orchestrator")
@@ -17,6 +20,7 @@ logger = logging.getLogger("apishield.orchestrator")
 class ScanResult:
     """Outcome of an orchestrated scan run."""
 
+    scan_id: int
     findings: list[Finding] = field(default_factory=list)
 
 
@@ -49,9 +53,9 @@ class ScanOrchestrator:
                 and credentials.
 
         Returns:
-            A :class:`ScanResult` with all findings. With no scanners
-            registered this is an empty result, which still proves the
-            orchestration plumbing works.
+            A :class:`ScanResult` with the persisted scan id and all findings.
+            With no scanners registered this is an empty result, which still
+            proves the orchestration plumbing works.
         """
         endpoints = list(
             await session.scalars(
@@ -65,12 +69,17 @@ class ScanOrchestrator:
         )
         credential = credentials[0] if credentials else None
 
+        scan = Scan(target_id=target.id, status="running")
+        session.add(scan)
+        await session.flush()
+        scan_id = scan.id
+
         findings: list[Finding] = []
         for scanner in self.scanners:
             for endpoint in endpoints:
                 try:
-                    findings.extend(
-                        await scanner.scan(target, endpoint, credential)
+                    scanner_findings = await scanner.scan(
+                        target, endpoint, credential
                     )
                 except Exception:
                     # One failing scanner must not abort the whole scan run.
@@ -80,4 +89,23 @@ class ScanOrchestrator:
                         endpoint.method,
                         endpoint.path,
                     )
-        return ScanResult(findings=findings)
+                    continue
+                findings.extend(scanner_findings)
+                session.add(
+                    Evidence(
+                        scan_id=scan.id,
+                        scanner_name=scanner.name,
+                        request_data=(
+                            f"{endpoint.method} "
+                            f"{target.base_url}{endpoint.path}"
+                        ),
+                        response_data=json.dumps(
+                            {"findings_count": len(scanner_findings)}
+                        ),
+                    )
+                )
+
+        scan.status = "completed"
+        scan.finished_at = datetime.now(timezone.utc)
+        await session.commit()
+        return ScanResult(scan_id=scan_id, findings=findings)

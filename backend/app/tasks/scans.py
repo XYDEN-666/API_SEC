@@ -26,6 +26,7 @@ def run_scan(target_id: int) -> dict:
                 return {
                     "status": "completed",
                     "target_id": target_id,
+                    "scan_db_id": result.scan_id,
                     "findings": len(result.findings),
                 }
         finally:
