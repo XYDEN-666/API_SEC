@@ -190,3 +190,68 @@ def test_jwt_finding_alongside_week6_findings(
             await engine.dispose()
 
     asyncio.run(_run())
+
+
+def test_full_scan_finds_all_four_categories(
+    client, http_target_factory, unique_email
+) -> None:
+    """One full scan (Headers, CORS, HTTP Methods, JWT) against a fixture
+    with known issues for each reports findings from all four categories."""
+    bad_token = jwt.encode(
+        {"sub": "1"},  # no exp on purpose
+        "some-secret",
+        algorithm="HS256",
+    )
+    base_url = http_target_factory(
+        {
+            # CORS: wildcard + credentials (issue).
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
+            # Headers: every security header missing (issue).
+        },
+        allow_methods=["TRACE"],  # HTTP Methods: TRACE enabled (issue).
+        body={"token": bad_token},  # JWT: missing exp (issue).
+    )
+    _, token = _register(client, _email("owner"))
+    target_id = _create_target(client, token, base_url)
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                target = await session.get(Target, target_id)
+                assert target is not None
+
+                result = await ScanOrchestrator().run_scan(target, session)
+                titles = {finding.title for finding in result.findings}
+
+                # All four categories must produce findings in this run.
+                headers_found = any(
+                    "Strict-Transport-Security" in title
+                    or "X-Content-Type-Options" in title
+                    or "Content-Security-Policy" in title
+                    or "X-Frame-Options" in title
+                    for title in titles
+                )
+                cors_found = any("CORS" in title for title in titles)
+                methods_found = any(
+                    "method enabled" in title
+                    or "advertises dangerous methods" in title
+                    for title in titles
+                )
+                jwt_found = any("JWT" in title for title in titles)
+
+                assert headers_found, f"headers findings missing: {titles}"
+                assert cors_found, f"cors findings missing: {titles}"
+                assert methods_found, f"http methods findings missing: {titles}"
+                assert jwt_found, f"jwt findings missing: {titles}"
+
+                # All scanners succeeded, so the scan completed cleanly.
+                scan = await session.get(Scan, result.scan_id)
+                assert scan is not None
+                assert scan.status == "completed"
+                assert result.errors == 0
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
