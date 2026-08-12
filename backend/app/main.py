@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.db import close_database, ping_database
 from app.routers.auth import router as auth_router
 from app.routers.projects import router as projects_router
+from app.routers.targets import router as targets_router
 from app.routers.users import router as users_router
 
 logger = logging.getLogger("apishield")
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(auth_router)
     app.include_router(projects_router)
+    app.include_router(targets_router)
     app.include_router(users_router)
 
     @app.get("/health", tags=["health"])

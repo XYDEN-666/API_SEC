@@ -14,7 +14,7 @@ from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-async def _get_owned_project(
+async def get_owned_project(
     project_id: int,
     owner: User,
     session: AsyncSession,
@@ -69,7 +69,7 @@ async def get_project(
     session: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Project:
-    return await _get_owned_project(project_id, current_user, session)
+    return await get_owned_project(project_id, current_user, session)
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
@@ -79,7 +79,7 @@ async def update_project(
     session: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Project:
-    project = await _get_owned_project(project_id, current_user, session)
+    project = await get_owned_project(project_id, current_user, session)
     project.name = payload.name
     await session.commit()
     await session.refresh(project)
@@ -92,7 +92,7 @@ async def delete_project(
     session: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Response:
-    project = await _get_owned_project(project_id, current_user, session)
+    project = await get_owned_project(project_id, current_user, session)
     await session.delete(project)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
