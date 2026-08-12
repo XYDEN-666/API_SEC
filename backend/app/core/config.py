@@ -19,5 +19,10 @@ class Settings(BaseSettings):
     secret_key: str = "dev-only-apishield-secret-key-change-me-0123456789abcdef"
     access_token_expire_minutes: int = 60
 
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://host.docker.internal:5174",
+    ]
+
 
 settings = Settings()
