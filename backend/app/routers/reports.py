@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -12,6 +12,7 @@ from app.models import User
 from app.routers.scans import get_owned_scan
 from app.services.reports.data import build_report_data
 from app.services.reports.html_report import render_html_report
+from app.services.reports.pdf_report import render_pdf_report
 
 router = APIRouter(tags=["reports"])
 
@@ -26,3 +27,24 @@ async def scan_report_html(
     await get_owned_scan(scan_id, current_user, session)
     data = await build_report_data(session, scan_id)
     return HTMLResponse(render_html_report(data))
+
+
+@router.get("/scans/{scan_id}/report.pdf")
+async def scan_report_pdf(
+    scan_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    """Return the PDF rendering of the same HTML report."""
+    await get_owned_scan(scan_id, current_user, session)
+    data = await build_report_data(session, scan_id)
+    pdf = render_pdf_report(render_html_report(data))
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="scan-{scan_id}-report.pdf"'
+            )
+        },
+    )
