@@ -19,6 +19,7 @@ from app.scanners.http_methods import HTTPMethodScanner
 from app.scanners.idor_bola import IDORScanner
 from app.scanners.jwt_config import JWTScanner
 from app.scanners.sqli_indicators import SQLiScanner
+from app.services.deduplication import FindingDeduplicator
 from app.services.owasp_mapping import category_for_scanner
 
 logger = logging.getLogger("apishield.orchestrator")
@@ -99,6 +100,7 @@ class ScanOrchestrator:
         session.add(scan)
         await session.flush()
         scan_id = scan.id
+        deduplicator = FindingDeduplicator(scan_id=scan_id)
 
         findings: list[ScannerFinding] = []
         scan_errors = 0
@@ -154,9 +156,18 @@ class ScanOrchestrator:
                         )
                     )
                     continue
-                findings.extend(scanner_findings)
+                # Collapse true duplicates (same scanner, same endpoint, same
+                # issue) while keeping per-endpoint findings distinct.
+                endpoint_url = f"{endpoint.method} {target.base_url}{endpoint.path}"
+                unique_findings = [
+                    finding
+                    for finding in scanner_findings
+                    if not deduplicator.is_duplicate(
+                        endpoint_url, scanner.name, finding
+                    )
+                ]
                 response_data: dict[str, object] = {
-                    "findings_count": len(scanner_findings)
+                    "findings_count": len(unique_findings)
                 }
                 summary = getattr(scanner, "evidence_summary", None)
                 if summary:
@@ -164,15 +175,13 @@ class ScanOrchestrator:
                 evidence = Evidence(
                     scan_id=scan.id,
                     scanner_name=scanner.name,
-                    request_data=(
-                        f"{endpoint.method} "
-                        f"{target.base_url}{endpoint.path}"
-                    ),
+                    request_data=endpoint_url,
                     response_data=json.dumps(response_data),
                 )
                 session.add(evidence)
                 await session.flush()
-                for finding in scanner_findings:
+                for finding in unique_findings:
+                    findings.append(finding)
                     session.add(
                         Finding(
                             scan_id=scan.id,

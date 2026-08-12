@@ -94,6 +94,37 @@ def http_target():
 
 
 @pytest.fixture
+def http_multi_endpoint_target():
+    """Fixture target with three endpoints that all omit security headers."""
+    started: list[tuple[uvicorn.Server, threading.Thread]] = []
+
+    def _start() -> str:
+        app = FastAPI()
+
+        @app.get("/a")
+        def endpoint_a() -> dict[str, bool]:
+            return {"ok": True}
+
+        @app.get("/b")
+        def endpoint_b() -> dict[str, bool]:
+            return {"ok": True}
+
+        @app.get("/c")
+        def endpoint_c() -> dict[str, bool]:
+            return {"ok": True}
+
+        base_url, server, thread = _start_server(app)
+        started.append((server, thread))
+        return base_url
+
+    yield _start
+
+    for server, thread in started:
+        server.should_exit = True
+        thread.join(timeout=10)
+
+
+@pytest.fixture
 def http_target_factory():
     """Start HTTP targets that return a configurable set of response headers."""
     started: list[tuple[uvicorn.Server, threading.Thread]] = []
