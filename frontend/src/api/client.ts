@@ -40,6 +40,31 @@ export interface Target {
   name: string;
 }
 
+export interface Endpoint {
+  id: number;
+  target_id: number;
+  path: string;
+  method: string;
+  parameters: unknown[] | null;
+}
+
+export interface Credential {
+  id: number;
+  target_id: number;
+  identity_name: string;
+  auth_type: string;
+  masked_value: string;
+}
+
+export interface ImportOpenApiResult {
+  message: string;
+  openapi: string;
+  title: string | null;
+  version: string | null;
+  paths_count: number;
+  endpoints_count: number;
+}
+
 let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null): void {
@@ -51,7 +76,9 @@ async function apiFetch(
   options: RequestInit = {},
 ): Promise<Response> {
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
+  if (!(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   if (accessToken !== null) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
@@ -143,4 +170,46 @@ export async function createTarget(
     body: JSON.stringify({ name, base_url: baseUrl }),
   });
   return (await response.json()) as Target;
+}
+
+export async function importOpenApi(
+  targetId: number,
+  file: File,
+): Promise<ImportOpenApiResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await apiFetch(`/targets/${targetId}/import-openapi`, {
+    method: "POST",
+    body: form,
+  });
+  return (await response.json()) as ImportOpenApiResult;
+}
+
+export async function listEndpoints(targetId: number): Promise<Endpoint[]> {
+  const response = await apiFetch(`/targets/${targetId}/endpoints`);
+  return (await response.json()) as Endpoint[];
+}
+
+export async function listCredentials(
+  targetId: number,
+): Promise<Credential[]> {
+  const response = await apiFetch(`/targets/${targetId}/credentials`);
+  return (await response.json()) as Credential[];
+}
+
+export async function createCredential(
+  targetId: number,
+  identityName: string,
+  authType: string,
+  value: string,
+): Promise<Credential> {
+  const response = await apiFetch(`/targets/${targetId}/credentials`, {
+    method: "POST",
+    body: JSON.stringify({
+      identity_name: identityName,
+      auth_type: authType,
+      value,
+    }),
+  });
+  return (await response.json()) as Credential;
 }
