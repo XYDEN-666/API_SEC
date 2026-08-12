@@ -177,6 +177,8 @@ def http_idor_target():
     * ``forbidden`` (default): non-admin identities get 403.
     * ``bola``: non-admin identities get 200 with the same private object.
     * ``isolated``: non-admin identities get 200 with their own object.
+    * ``noisy``: non-admin identities get 200 with their own object, but the
+      timestamp matches the admin's (a noisy field only).
     """
     started: list[tuple[uvicorn.Server, threading.Thread]] = []
 
@@ -189,6 +191,14 @@ def http_idor_target():
             api_key = request.headers.get("x-api-key")
             hits.append((request.url.path, api_key))
             if api_key == "admin-secret":
+                if mode == "noisy":
+                    return {
+                        "id": user_id,
+                        "email": "owner@example.com",
+                        "created_at": "2026-08-12T00:00:00Z",
+                        "request_id": "req-owner",
+                        "ok": True,
+                    }
                 return {
                     "id": user_id,
                     "email": "owner@example.com",
@@ -204,6 +214,14 @@ def http_idor_target():
                 return {
                     "id": user_id,
                     "email": "intruder@example.com",
+                    "ok": True,
+                }
+            if mode == "noisy":
+                return {
+                    "id": user_id,
+                    "email": "intruder@example.com",
+                    "created_at": "2026-08-12T00:00:00Z",
+                    "request_id": "req-intruder",
                     "ok": True,
                 }
             return JSONResponse({"error": "forbidden"}, status_code=403)

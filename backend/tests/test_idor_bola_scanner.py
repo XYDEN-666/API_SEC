@@ -225,3 +225,42 @@ def test_properly_isolated_fixture_produces_no_finding(
         )
     )
     assert findings == []
+
+
+def test_only_noisy_field_matching_does_not_false_positive(
+    http_idor_target,
+) -> None:
+    base_url, _ = http_idor_target(mode="noisy")
+    admin = _credential("admin", "admin-secret")
+    intruder = _credential("intruder", "other-secret")
+
+    scanner = IDORScanner()
+    scanner.credentials = [admin, intruder]
+
+    findings = asyncio.run(
+        run_scanner_against_target(
+            scanner, base_url, path="/users/{user_id}"
+        )
+    )
+    assert findings == []
+
+
+def test_ignore_list_is_configurable(http_idor_target) -> None:
+    """With the ignore list disabled and a noisy field treated as sensitive,
+    the same fixture DOES produce a finding — proving exclusion is the cause."""
+    base_url, _ = http_idor_target(mode="noisy")
+    admin = _credential("admin", "admin-secret")
+    intruder = _credential("intruder", "other-secret")
+
+    scanner = IDORScanner()
+    scanner.credentials = [admin, intruder]
+    scanner.ignore_fields = set()
+    scanner.sensitive_fields = {"email", "created_at"}
+
+    findings = asyncio.run(
+        run_scanner_against_target(
+            scanner, base_url, path="/users/{user_id}"
+        )
+    )
+    assert len(findings) == 1
+    assert "created_at" in findings[0].evidence

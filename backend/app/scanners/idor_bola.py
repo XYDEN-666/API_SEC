@@ -47,6 +47,19 @@ DEFAULT_SENSITIVE_FIELDS = {
     "dob",
 }
 
+DEFAULT_NOISE_FIELDS = {
+    "timestamp",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "cursor",
+    "next_cursor",
+    "page_token",
+    "request_id",
+    "trace_id",
+    "correlation_id",
+}
+
 
 class IDORScanner(BaseScanner):
     """Replay object-identifier requests across identities."""
@@ -58,6 +71,10 @@ class IDORScanner(BaseScanner):
         self.credentials: list = []
         self.evidence_summary: str | None = None
         self.sensitive_fields: set[str] = set(DEFAULT_SENSITIVE_FIELDS)
+        # Known-noisy fields (timestamps, cursors, request ids) are excluded
+        # from the sensitive-field comparison so they can't cause false
+        # positives. Configurable per scanner instance.
+        self.ignore_fields: set[str] = set(DEFAULT_NOISE_FIELDS)
 
     async def scan(self, target, endpoint, credentials):
         self.evidence_summary = None
@@ -144,6 +161,7 @@ class IDORScanner(BaseScanner):
                     first["body"],
                     second["body"],
                     self.sensitive_fields,
+                    self.ignore_fields,
                 )
                 if overlap:
                     findings.append(
@@ -189,19 +207,25 @@ def _parse_json(response: httpx.Response) -> object:
         return None
 
 
-def _collect_sensitive(body: object, sensitive: set[str]) -> dict[str, set]:
-    """Recursively collect values for sensitive keys; returns key -> values."""
+def _collect_sensitive(
+    body: object,
+    sensitive: set[str],
+    ignore: set[str],
+) -> dict[str, set]:
+    """Recursively collect values for sensitive keys, skipping noisy ones."""
     collected: dict[str, set] = {}
     if isinstance(body, dict):
         for key, value in body.items():
+            if key in ignore:
+                continue
             if key in sensitive and isinstance(
                 value, (str, int, float, bool)
             ):
                 collected.setdefault(key, set()).add(value)
-            collected.update(_collect_sensitive(value, sensitive))
+            collected.update(_collect_sensitive(value, sensitive, ignore))
     elif isinstance(body, list):
         for item in body:
-            collected.update(_collect_sensitive(item, sensitive))
+            collected.update(_collect_sensitive(item, sensitive, ignore))
     return collected
 
 
@@ -209,10 +233,11 @@ def _sensitive_overlap(
     body_a: dict,
     body_b: dict,
     sensitive: set[str],
+    ignore: set[str],
 ) -> list[str]:
     """Return sensitive field names whose values overlap between two bodies."""
-    values_a = _collect_sensitive(body_a, sensitive)
-    values_b = _collect_sensitive(body_b, sensitive)
+    values_a = _collect_sensitive(body_a, sensitive, ignore)
+    values_b = _collect_sensitive(body_b, sensitive, ignore)
     return sorted(
         key
         for key in values_a
