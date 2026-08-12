@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     secret_key: str = "dev-only-apishield-secret-key-change-me-0123456789abcdef"
     access_token_expire_minutes: int = 60
 
+    # Development-only Fernet key (urlsafe-base64, 32 bytes). Override with
+    # a real key in production, e.g. `python -c "from cryptography.fernet
+    # import Fernet; print(Fernet.generate_key().decode())"`.
+    encryption_key: str = "P4vHutRJRUJn68B0vvg3UPIFNzMK3Y8apKih1ZR6v44="
+
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://host.docker.internal:5174",
