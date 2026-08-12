@@ -21,7 +21,7 @@ import time
 
 import pytest
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 
 from app.models import Endpoint, Target
 from app.scanners.base import Confidence, Finding, Severity
@@ -55,6 +55,23 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+def _start_server(app: FastAPI) -> tuple[str, uvicorn.Server, threading.Thread]:
+    """Start ``app`` on a random local port; return (base_url, server, thread)."""
+    port = _free_port()
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    deadline = time.time() + 10
+    while not server.started:
+        if time.time() > deadline:
+            raise RuntimeError("HTTP fixture target failed to start")
+        time.sleep(0.01)
+    return f"http://127.0.0.1:{port}", server, thread
+
+
 @pytest.fixture
 def http_target():
     """Start a tiny HTTP API on a random local port and yield its base URL."""
@@ -68,23 +85,36 @@ def http_target():
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    port = _free_port()
-    server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    )
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-
-    deadline = time.time() + 10
-    while not server.started:
-        if time.time() > deadline:
-            raise RuntimeError("HTTP fixture target failed to start")
-        time.sleep(0.01)
-
-    yield f"http://127.0.0.1:{port}"
+    base_url, server, thread = _start_server(app)
+    yield base_url
 
     server.should_exit = True
     thread.join(timeout=10)
+
+
+@pytest.fixture
+def http_target_factory():
+    """Start HTTP targets that return a configurable set of response headers."""
+    started: list[tuple[uvicorn.Server, threading.Thread]] = []
+
+    def _start(headers: dict[str, str]) -> str:
+        app = FastAPI()
+
+        @app.get("/")
+        def root(response: Response) -> dict[str, bool]:
+            for name, value in headers.items():
+                response.headers[name] = value
+            return {"ok": True}
+
+        base_url, server, thread = _start_server(app)
+        started.append((server, thread))
+        return base_url
+
+    yield _start
+
+    for server, thread in started:
+        server.should_exit = True
+        thread.join(timeout=10)
 
 
 async def run_scanner_against_target(
