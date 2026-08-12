@@ -14,6 +14,7 @@ from app.core.db import close_database, ping_database
 from app.routers.auth import router as auth_router
 from app.routers.authorization_records import router as authorization_records_router
 from app.routers.credentials import router as credentials_router
+from app.routers.dashboard import router as dashboard_router
 from app.routers.findings import router as findings_router
 from app.routers.projects import router as projects_router
 from app.routers.reports import router as reports_router
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(authorization_records_router)
     app.include_router(credentials_router)
+    app.include_router(dashboard_router)
     app.include_router(findings_router)
     app.include_router(projects_router)
     app.include_router(reports_router)

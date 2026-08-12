@@ -14,7 +14,7 @@ deployment.
 
 Deferred — do NOT build these even if it seems convenient: Swagger 2.0 import,
 Postman import, OAuth refresh flows, time-based SQLi, advanced JWT analysis,
-rate limiting scanner, dashboard analytics, scan scheduling, resume scans,
+rate limiting scanner, scan scheduling, resume scans,
 plugin ecosystem. If a task seems to require one of these, stop and flag it
 instead of implementing it.
 
@@ -39,23 +39,6 @@ instead of implementing it.
 A task is done when: the acceptance test (see prompt) passes, `alembic upgrade
 head` runs clean if a migration was added, and no Deferred-scope feature was
 touched.
-
-## Git workflow — follow this for every task
-1. Check the current branch: `git rev-parse --abbrev-ref HEAD`.
-   - If it's `main`, create a task branch first: `git checkout -b task-X.X-short-name`
-     (infer X.X and the short name from the task description itself — e.g. "Task 2.3 —
-     Register & login endpoints" becomes `task-2.3-register-login`).
-   - If already on a `task-*` branch, stay on it.
-2. Implement the task.
-3. Run the acceptance check described in the prompt yourself (pytest, curl, alembic
-   upgrade head, whatever applies) and confirm it actually passes. Do not commit on the
-   assumption it works — run the check first.
-4. Stage and commit with message format: `task X.X: <short description>`. One commit
-   per task, not several.
-5. Once the acceptance check passes, finish the flow automatically: merge the task
-   branch into `main` (fast-forward preferred), push `main`, and delete the task
-   branch locally and on the remote. Do NOT merge or push unless the acceptance
-   check actually passed.
 
 ## When blocked
 Stop and summarize what's blocking you rather than guessing at scope or
