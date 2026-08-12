@@ -19,6 +19,7 @@ from app.scanners.http_methods import HTTPMethodScanner
 from app.scanners.idor_bola import IDORScanner
 from app.scanners.jwt_config import JWTScanner
 from app.scanners.sqli_indicators import SQLiScanner
+from app.services.owasp_mapping import category_for_scanner
 
 logger = logging.getLogger("apishield.orchestrator")
 
@@ -180,7 +181,13 @@ class ScanOrchestrator:
                             severity=finding.severity.value,
                             endpoint=f"{target.base_url}{endpoint.path}",
                             evidence_id=evidence.id,
-                            owasp_category=finding.owasp_category,
+                            # Fall back to the registered mapping so a
+                            # third-party scanner can never persist a finding
+                            # without a non-null OWASP category.
+                            owasp_category=(
+                                finding.owasp_category
+                                or category_for_scanner(scanner.name)
+                            ),
                             confidence=finding.confidence.value,
                         )
                     )

@@ -49,8 +49,9 @@ Rules:
 * Return a list of :class:`Finding` (an empty list means "no issues found").
 * Use the :class:`Severity` and :class:`Confidence` enums for those fields so
   downstream engines can sort and filter consistently.
-* Use OWASP API Security Top 10 identifiers (e.g. ``"api1:2023"``) for
-  ``owasp_category``.
+* Use OWASP API Security Top 10 identifiers for ``owasp_category``. Prefer
+  ``app.services.owasp_mapping.category_for_scanner()`` -- it is the single
+  source of truth for the current (2023) edition's categories.
 """
 
 from abc import ABC, abstractmethod

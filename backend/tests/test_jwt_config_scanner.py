@@ -39,7 +39,7 @@ def test_token_missing_exp_produces_finding(http_target_factory) -> None:
     assert "JWT missing exp claim" in titles
     finding = next(f for f in findings if f.title == "JWT missing exp claim")
     assert finding.severity.value == "medium"
-    assert finding.owasp_category == "api8:2023"
+    assert finding.owasp_category == "api2:2023"
 
 
 def test_well_formed_token_produces_no_findings(http_target_factory) -> None:

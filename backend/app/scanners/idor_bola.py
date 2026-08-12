@@ -27,10 +27,11 @@ import httpx
 
 from app.core.crypto import decrypt_value
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
+from app.services.owasp_mapping import category_for_scanner
 
 logger = logging.getLogger("apishield.scanners.idor")
 
-_OWASP_CATEGORY = "api1:2023"
+_OWASP_CATEGORY = category_for_scanner("idor_bola")
 
 DEFAULT_SENSITIVE_FIELDS = {
     "email",

@@ -5,10 +5,11 @@ import logging
 import httpx
 
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
+from app.services.owasp_mapping import category_for_scanner
 
 logger = logging.getLogger("apishield.scanners.http_methods")
 
-_OWASP_CATEGORY = "api8:2023"
+_OWASP_CATEGORY = category_for_scanner("http_methods")
 
 
 class HTTPMethodScanner(BaseScanner):

@@ -26,7 +26,7 @@ def test_error_echoing_fixture_produces_finding(http_sqli_target) -> None:
         f for f in path_findings if "SQL injection indicator" in f.title
     )
     assert finding.severity.value == "high"
-    assert finding.owasp_category == "api8:2023"
+    assert finding.owasp_category == "api10:2023"
     assert (
         "sqlstate" in finding.evidence.lower()
         or "syntax error" in finding.evidence.lower()
