@@ -112,7 +112,13 @@ def test_orchestrator_with_zero_scanners_returns_empty_result(
                 assert scan is not None
                 assert scan.status == "completed"
                 assert scan.finished_at is not None
-                evidence = (await session.scalars(select(Evidence))).all()
+                evidence = (
+                    await session.scalars(
+                        select(Evidence).where(
+                            Evidence.scan_id == result.scan_id
+                        )
+                    )
+                ).all()
                 assert evidence == []
         finally:
             await engine.dispose()

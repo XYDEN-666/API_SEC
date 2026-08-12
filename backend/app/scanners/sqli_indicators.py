@@ -56,8 +56,12 @@ class SQLiScanner(BaseScanner):
         if endpoint is None:
             return []
 
+        # One finding per (endpoint, matched signature), regardless of how
+        # many payloads triggered it, so path and query injection behave the
+        # same and reports don't drown in per-payload duplicates.
+        endpoint_key = f"{target.base_url}{endpoint.path or '/'}"
         findings: list[Finding] = []
-        seen: set[tuple[str, str]] = set()
+        matched_by_key: dict[tuple[str, str], list[str]] = {}
         async with httpx.AsyncClient(timeout=10.0) as client:
             for url in _injection_urls(target, endpoint):
                 try:
@@ -73,17 +77,20 @@ class SQLiScanner(BaseScanner):
                 )
                 if matched is None:
                     continue
-                key = (url.split("?")[0], matched)
-                if key in seen:
-                    continue
-                seen.add(key)
-                findings.append(
-                    _finding(
-                        "SQL injection indicator detected",
-                        url,
-                        f"DB error signature {matched!r} in response",
-                    )
+                matched_by_key.setdefault((endpoint_key, matched), []).append(url)
+
+        for (key, matched), urls in matched_by_key.items():
+            urls_text = "; ".join(urls[:5])
+            if len(urls) > 5:
+                urls_text += f" (+{len(urls) - 5} more)"
+            findings.append(
+                _finding(
+                    "SQL injection indicator detected",
+                    key,
+                    f"DB error signature {matched!r} on {len(urls)} probe(s): "
+                    f"{urls_text}",
                 )
+            )
         return findings
 
 

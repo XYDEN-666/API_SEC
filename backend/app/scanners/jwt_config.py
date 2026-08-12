@@ -58,12 +58,12 @@ class JWTScanner(BaseScanner):
 
         tokens = set(_JWT_RE.findall(response.text))
         findings: list[Finding] = []
-        seen: set[str] = set()
+        seen_tokens: set[str] = set()
         for token in tokens:
-            for finding in _analyze_token(token, url):
-                if finding.evidence not in seen:
-                    findings.append(finding)
-                    seen.add(finding.evidence)
+            if token in seen_tokens:
+                continue
+            seen_tokens.add(token)
+            findings.extend(_analyze_token(token, url))
         return findings
 
 
