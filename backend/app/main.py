@@ -11,6 +11,7 @@ from app.core.cache import close_redis, ping_redis
 from app.core.config import settings
 from app.core.db import close_database, ping_database
 from app.routers.auth import router as auth_router
+from app.routers.users import router as users_router
 
 logger = logging.getLogger("apishield")
 if not logger.handlers:
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     """Build and configure the FastAPI application."""
     app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
     app.include_router(auth_router)
+    app.include_router(users_router)
 
     @app.get("/health", tags=["health"])
     def health() -> dict[str, str]:
