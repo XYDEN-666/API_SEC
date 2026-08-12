@@ -255,3 +255,84 @@ def test_full_scan_finds_all_four_categories(
             await engine.dispose()
 
     asyncio.run(_run())
+
+
+def test_full_scan_finds_error_based_sqli(
+    client, http_sqli_target, unique_email
+) -> None:
+    """A fixture vulnerable to error-based SQLi yields the SQLi finding in a
+    full default scan."""
+    base_url = http_sqli_target(vulnerable=True)
+    _, token = _register(client, _email("owner"))
+
+    project = client.post(
+        "/projects", json={"name": "SQLi Project"}, headers=_auth(token)
+    )
+    assert project.status_code == 201
+    target = client.post(
+        f"/projects/{project.json()['id']}/targets",
+        json={"name": "SQLi API", "base_url": base_url},
+        headers=_auth(token),
+    )
+    assert target.status_code == 201
+    target_id = target.json()["id"]
+
+    spec = {
+        "openapi": "3.0.3",
+        "info": {"title": "SQLi API", "version": "1.0.0"},
+        "paths": {
+            "/users/{user_id}": {
+                "get": {
+                    "parameters": [
+                        {
+                            "name": "user_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    upload = client.post(
+        f"/targets/{target_id}/import-openapi",
+        files={
+            "file": (
+                "openapi.json",
+                json.dumps(spec).encode(),
+                "application/json",
+            )
+        },
+        headers=_auth(token),
+    )
+    assert upload.status_code == 200
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                target = await session.get(Target, target_id)
+                assert target is not None
+
+                result = await ScanOrchestrator().run_scan(target, session)
+                titles = {finding.title for finding in result.findings}
+
+                assert (
+                    "SQL injection indicator detected" in titles
+                ), f"sqli finding missing: {titles}"
+                sqli = next(
+                    f
+                    for f in result.findings
+                    if f.title == "SQL injection indicator detected"
+                )
+                assert sqli.severity.value == "high"
+
+                scan = await session.get(Scan, result.scan_id)
+                assert scan is not None
+                assert scan.status == "completed"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())

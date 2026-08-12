@@ -17,6 +17,7 @@ from app.scanners.cors import CORSScanner
 from app.scanners.headers import HeaderScanner
 from app.scanners.http_methods import HTTPMethodScanner
 from app.scanners.jwt_config import JWTScanner
+from app.scanners.sqli_indicators import SQLiScanner
 
 logger = logging.getLogger("apishield.orchestrator")
 
@@ -25,6 +26,7 @@ _DEFAULT_SCANNER_CLASSES: tuple[type[BaseScanner], ...] = (
     CORSScanner,
     HTTPMethodScanner,
     JWTScanner,
+    SQLiScanner,
 )
 
 
