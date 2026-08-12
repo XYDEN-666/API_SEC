@@ -11,8 +11,8 @@ from typing import Iterable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Credential, Endpoint, Evidence, Scan, Target
-from app.scanners.base import BaseScanner, Finding
+from app.models import Credential, Endpoint, Evidence, Finding, Scan, Target
+from app.scanners.base import BaseScanner, Finding as ScannerFinding
 from app.scanners.cors import CORSScanner
 from app.scanners.headers import HeaderScanner
 from app.scanners.http_methods import HTTPMethodScanner
@@ -37,7 +37,7 @@ class ScanResult:
     """Outcome of an orchestrated scan run."""
 
     scan_id: int
-    findings: list[Finding] = field(default_factory=list)
+    findings: list[ScannerFinding] = field(default_factory=list)
     errors: int = 0
 
 
@@ -99,7 +99,7 @@ class ScanOrchestrator:
         await session.flush()
         scan_id = scan.id
 
-        findings: list[Finding] = []
+        findings: list[ScannerFinding] = []
         scan_errors = 0
         for scanner in self.scanners:
             # Provide the full credential set for multi-identity scanners.
@@ -160,17 +160,30 @@ class ScanOrchestrator:
                 summary = getattr(scanner, "evidence_summary", None)
                 if summary:
                     response_data["summary"] = summary
-                session.add(
-                    Evidence(
-                        scan_id=scan.id,
-                        scanner_name=scanner.name,
-                        request_data=(
-                            f"{endpoint.method} "
-                            f"{target.base_url}{endpoint.path}"
-                        ),
-                        response_data=json.dumps(response_data),
-                    )
+                evidence = Evidence(
+                    scan_id=scan.id,
+                    scanner_name=scanner.name,
+                    request_data=(
+                        f"{endpoint.method} "
+                        f"{target.base_url}{endpoint.path}"
+                    ),
+                    response_data=json.dumps(response_data),
                 )
+                session.add(evidence)
+                await session.flush()
+                for finding in scanner_findings:
+                    session.add(
+                        Finding(
+                            scan_id=scan.id,
+                            title=finding.title,
+                            description=finding.description,
+                            severity=finding.severity.value,
+                            endpoint=f"{target.base_url}{endpoint.path}",
+                            evidence_id=evidence.id,
+                            owasp_category=finding.owasp_category,
+                            confidence=finding.confidence.value,
+                        )
+                    )
 
         scan.status = "completed" if scan_errors == 0 else "completed_with_errors"
         scan.finished_at = datetime.now(timezone.utc)

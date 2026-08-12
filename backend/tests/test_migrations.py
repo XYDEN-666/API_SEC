@@ -70,6 +70,7 @@ def test_alembic_upgrade_head_creates_project_tables_with_fks() -> None:
                     "credentials",
                     "scans",
                     "evidence",
+                    "findings",
                 ):
                     exists = (
                         await connection.execute(
@@ -90,6 +91,7 @@ def test_alembic_upgrade_head_creates_project_tables_with_fks() -> None:
                     "credentials": "FOREIGN KEY (target_id) REFERENCES targets(id)",
                     "scans": "FOREIGN KEY (target_id) REFERENCES targets(id)",
                     "evidence": "FOREIGN KEY (scan_id) REFERENCES scans(id)",
+                    "findings": "FOREIGN KEY (scan_id) REFERENCES scans(id)",
                 }
                 for table, expected in expected_fks.items():
                     rows = (
