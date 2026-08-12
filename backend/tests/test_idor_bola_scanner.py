@@ -183,3 +183,45 @@ def test_orchestrator_captures_replays_in_evidence(
             await engine.dispose()
 
     asyncio.run(_run())
+
+
+def test_lower_privileged_identity_receives_same_private_object(
+    http_idor_target,
+) -> None:
+    base_url, _ = http_idor_target(mode="bola")
+    admin = _credential("admin", "admin-secret")
+    intruder = _credential("intruder", "other-secret")
+
+    scanner = IDORScanner()
+    scanner.credentials = [admin, intruder]
+
+    findings = asyncio.run(
+        run_scanner_against_target(
+            scanner, base_url, path="/users/{user_id}"
+        )
+    )
+
+    # Same 2xx status + overlapping sensitive field (email) -> finding.
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.title == "Access-control anomaly detected (IDOR/BOLA)"
+    assert "email" in finding.evidence
+    assert finding.confidence.value == "high"
+
+
+def test_properly_isolated_fixture_produces_no_finding(
+    http_idor_target,
+) -> None:
+    base_url, _ = http_idor_target(mode="isolated")
+    admin = _credential("admin", "admin-secret")
+    intruder = _credential("intruder", "other-secret")
+
+    scanner = IDORScanner()
+    scanner.credentials = [admin, intruder]
+
+    findings = asyncio.run(
+        run_scanner_against_target(
+            scanner, base_url, path="/users/{user_id}"
+        )
+    )
+    assert findings == []

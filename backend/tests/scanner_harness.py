@@ -171,10 +171,16 @@ def http_sqli_target():
 @pytest.fixture
 def http_idor_target():
     """Fixture target with an object-identifier endpoint that distinguishes
-    identities via the X-API-Key header, plus a request log."""
+    identities via the X-API-Key header, plus a request log.
+
+    Modes:
+    * ``forbidden`` (default): non-admin identities get 403.
+    * ``bola``: non-admin identities get 200 with the same private object.
+    * ``isolated``: non-admin identities get 200 with their own object.
+    """
     started: list[tuple[uvicorn.Server, threading.Thread]] = []
 
-    def _start() -> tuple[str, list]:
+    def _start(mode: str = "forbidden") -> tuple[str, list]:
         hits: list[tuple[str, str | None]] = []
         app = FastAPI()
 
@@ -183,7 +189,23 @@ def http_idor_target():
             api_key = request.headers.get("x-api-key")
             hits.append((request.url.path, api_key))
             if api_key == "admin-secret":
-                return {"id": user_id, "ok": True}
+                return {
+                    "id": user_id,
+                    "email": "owner@example.com",
+                    "ok": True,
+                }
+            if mode == "bola":
+                return {
+                    "id": user_id,
+                    "email": "owner@example.com",
+                    "ok": True,
+                }
+            if mode == "isolated":
+                return {
+                    "id": user_id,
+                    "email": "intruder@example.com",
+                    "ok": True,
+                }
             return JSONResponse({"error": "forbidden"}, status_code=403)
 
         base_url, server, thread = _start_server(app)
