@@ -3,35 +3,56 @@ services:
     build:
       context: ./backend
     container_name: apishield-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://apishield:apishield@postgres:5432/apishield
-      REDIS_URL: redis://redis:6379/0
+      APP_NAME: ${APP_NAME:-APIShield}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-apishield}:${POSTGRES_PASSWORD:-apishield}@postgres:5432/${POSTGRES_DB:-apishield}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY:-dev-only-apishield-secret-key-change-me-0123456789abcdef}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-P4vHutRJRUJn68B0vvg3UPIFNzMK3Y8apKih1ZR6v44=}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173","http://host.docker.internal:5174"]}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   frontend:
     build:
       context: ./frontend
     container_name: apishield-frontend
+    restart: unless-stopped
     environment:
-      VITE_API_BASE_URL: http://localhost:8000
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     ports:
       - "5173:5173"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
 
   postgres:
     image: postgres:16-alpine
     container_name: apishield-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: apishield
-      POSTGRES_PASSWORD: apishield
-      POSTGRES_DB: apishield
+      POSTGRES_USER: ${POSTGRES_USER:-apishield}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-apishield}
+      POSTGRES_DB: ${POSTGRES_DB:-apishield}
     ports:
       - "5432:5432"
     volumes:
@@ -45,6 +66,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: apishield-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -59,15 +81,24 @@ services:
     build:
       context: ./backend
     container_name: apishield-worker
+    restart: unless-stopped
     command: celery -A app.core.celery_app.celery_app worker --loglevel=info
     environment:
-      DATABASE_URL: postgresql+asyncpg://apishield:apishield@postgres:5432/apishield
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-apishield}:${POSTGRES_PASSWORD:-apishield}@postgres:5432/${POSTGRES_DB:-apishield}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY:-dev-only-apishield-secret-key-change-me-0123456789abcdef}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-P4vHutRJRUJn68B0vvg3UPIFNzMK3Y8apKih1ZR6v44=}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import glob; alive=[p for p in glob.glob('/proc/[0-9]*/cmdline') if b'celery' in open(p,'rb').read()]; raise SystemExit(0 if alive else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
 
 volumes:
   postgres_data:
