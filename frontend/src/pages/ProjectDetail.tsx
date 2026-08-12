@@ -300,6 +300,13 @@ export default function ProjectDetail() {
               ))}
             </ul>
           )}
+
+          <h3>Scan</h3>
+          <p>
+            <Link to={`/targets/${selectedTargetId}/results`}>
+              View scan results for this target
+            </Link>
+          </p>
         </>
       )}
     </section>

@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import Register from "./pages/Register";
+import ReportViewer from "./pages/ReportViewer";
 
 function PublicOnlyRoute() {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ export default function App() {
           <Route index element={<Home />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:projectId" element={<ProjectDetail />} />
+          <Route path="/targets/:targetId/results" element={<ReportViewer />} />
         </Route>
       </Route>
     </Routes>

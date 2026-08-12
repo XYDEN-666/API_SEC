@@ -213,3 +213,98 @@ export async function createCredential(
   });
   return (await response.json()) as Credential;
 }
+
+export interface Scan {
+  id: number;
+  target_id: number;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface ReportEvidence {
+  evidence_id: number;
+  scanner_name: string;
+  request_data: string | null;
+  response_data: string | null;
+  timestamp: string | null;
+}
+
+export interface ReportFinding {
+  id: number;
+  scan_id: number;
+  title: string;
+  description: string;
+  severity: string;
+  endpoint: string;
+  evidence_id: number | null;
+  owasp_category: string;
+  confidence: string;
+  created_at: string;
+  risk_score: number;
+  risk_label: string;
+  evidence: ReportEvidence | null;
+}
+
+export interface ReportSummary {
+  info: number;
+  low: number;
+  medium: number;
+  high: number;
+  critical: number;
+  total: number;
+}
+
+export interface ReportMetadata {
+  scan_id: number;
+  target_id: number;
+  target_name: string;
+  base_url: string;
+  project_id: number;
+  project_name: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  generated_at: string;
+}
+
+export interface ReportData {
+  metadata: ReportMetadata;
+  summary: ReportSummary;
+  findings: ReportFinding[];
+}
+
+export async function listScans(targetId: number): Promise<Scan[]> {
+  const response = await apiFetch(`/targets/${targetId}/scans`);
+  return (await response.json()) as Scan[];
+}
+
+export async function startScan(
+  targetId: number,
+): Promise<{ scan_id: string; status: string }> {
+  const response = await apiFetch(`/targets/${targetId}/scans`, {
+    method: "POST",
+  });
+  return (await response.json()) as { scan_id: string; status: string };
+}
+
+export async function getReport(scanId: number): Promise<ReportData> {
+  const response = await apiFetch(`/scans/${scanId}/report.json`);
+  return (await response.json()) as ReportData;
+}
+
+export async function downloadReport(
+  scanId: number,
+  format: "html" | "pdf" | "json",
+): Promise<void> {
+  const response = await apiFetch(`/scans/${scanId}/report.${format}`);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `scan-${scanId}-report.${format}`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
