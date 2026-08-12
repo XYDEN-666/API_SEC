@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   downloadReport,
   getReport,
@@ -41,6 +41,7 @@ function severityLabel(severity: string): string {
 
 export default function ReportViewer() {
   const { targetId } = useParams();
+  const [searchParams] = useSearchParams();
   const target = Number(targetId);
   const [scans, setScans] = useState<Scan[]>([]);
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
@@ -55,6 +56,8 @@ export default function ReportViewer() {
       setLoading(false);
       return;
     }
+    const requestedScanId = searchParams.get("scan");
+    const requested = requestedScanId ? Number(requestedScanId) : null;
     let cancelled = false;
     async function loadLatest() {
       try {
@@ -63,10 +66,11 @@ export default function ReportViewer() {
           return;
         }
         setScans(all);
-        const latest = all[0];
-        if (latest !== undefined) {
-          setSelectedScanId(latest.id);
-          setReport(await getReport(latest.id));
+        const initial =
+          all.find((scan) => scan.id === requested) ?? all[0];
+        if (initial !== undefined) {
+          setSelectedScanId(initial.id);
+          setReport(await getReport(initial.id));
         }
       } catch (err) {
         if (!cancelled) {
@@ -84,7 +88,7 @@ export default function ReportViewer() {
     return () => {
       cancelled = true;
     };
-  }, [target]);
+  }, [target, searchParams.get("scan")]);
 
   async function selectScan(scanId: number) {
     setError(null);

@@ -214,6 +214,7 @@ def test_dashboard_summary_matches_seeded_db_for_owner(client) -> None:
     for scan, (target_name, status, top_title, top_severity) in zip(
         body["recent_scans"], expected_recent
     ):
+        assert scan["target_id"] is not None
         assert scan["target_name"] == target_name
         assert scan["status"] == status
         assert scan["top_finding"] == {
@@ -313,6 +314,7 @@ def test_dashboard_summary_is_isolated_per_user(client) -> None:
     assert b_body["findings_by_category"] == {"api8:2023": 1}
     assert len(b_body["recent_scans"]) == 1
     assert b_body["recent_scans"][0]["id"] == ids_b["s2"]
+    assert b_body["recent_scans"][0]["target_id"] is not None
     assert b_body["recent_scans"][0]["target_name"] == "API B"
     assert b_body["recent_scans"][0]["top_finding"] == {
         "title": "B high",

@@ -308,3 +308,33 @@ export async function downloadReport(
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+
+export interface TopFinding {
+  title: string;
+  severity: string;
+}
+
+export interface RecentScan {
+  id: number;
+  target_id: number;
+  target_name: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  top_finding: TopFinding | null;
+}
+
+export interface DashboardSummary {
+  total_projects: number;
+  total_targets: number;
+  total_scans: number;
+  total_findings: number;
+  findings_by_severity: Record<string, number>;
+  findings_by_category: Record<string, number>;
+  recent_scans: RecentScan[];
+}
+
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  const response = await apiFetch("/dashboard/summary");
+  return (await response.json()) as DashboardSummary;
+}

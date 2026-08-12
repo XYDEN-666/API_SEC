@@ -70,7 +70,7 @@ async def get_dashboard_summary(session: AsyncSession, user_id: int) -> dict:
 
     recent_scan_rows = (
         await session.execute(
-            select(Scan, Target.name)
+            select(Scan, Target.id, Target.name)
             .join(Target, Target.id == Scan.target_id)
             .join(Project, Project.id == Target.project_id)
             .where(Project.owner_id == user_id)
@@ -80,7 +80,7 @@ async def get_dashboard_summary(session: AsyncSession, user_id: int) -> dict:
     ).all()
 
     recent_scans = []
-    for scan, target_name in recent_scan_rows:
+    for scan, target_id, target_name in recent_scan_rows:
         top = (
             await session.execute(
                 select(Finding.title, Finding.severity)
@@ -92,6 +92,7 @@ async def get_dashboard_summary(session: AsyncSession, user_id: int) -> dict:
         recent_scans.append(
             {
                 "id": scan.id,
+                "target_id": target_id,
                 "target_name": target_name,
                 "status": scan.status,
                 "started_at": scan.started_at,

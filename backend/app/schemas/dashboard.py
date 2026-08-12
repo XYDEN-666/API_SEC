@@ -16,6 +16,7 @@ class RecentScan(BaseModel):
     """One recent scan with its target and top finding."""
 
     id: int
+    target_id: int
     target_name: str
     status: str
     started_at: datetime
