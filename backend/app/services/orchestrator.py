@@ -1,6 +1,7 @@
 """Scan orchestration: drives registered scanners across a target's endpoints
 and persists scan/evidence records."""
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ class ScanResult:
 
     scan_id: int
     findings: list[Finding] = field(default_factory=list)
+    errors: int = 0
 
 
 class ScanOrchestrator:
@@ -44,11 +46,16 @@ class ScanOrchestrator:
     any persistence layer directly.
     """
 
-    def __init__(self, scanners: Iterable[BaseScanner] | None = None) -> None:
+    def __init__(
+        self,
+        scanners: Iterable[BaseScanner] | None = None,
+        scanner_timeout: float = 30.0,
+    ) -> None:
         if scanners is None:
             self.scanners = [scanner_cls() for scanner_cls in _DEFAULT_SCANNER_CLASSES]
         else:
             self.scanners = list(scanners)
+        self.scanner_timeout = scanner_timeout
 
     def register(self, scanner: BaseScanner) -> None:
         """Enable a scanner for subsequent runs."""
@@ -89,19 +96,55 @@ class ScanOrchestrator:
         scan_id = scan.id
 
         findings: list[Finding] = []
+        scan_errors = 0
         for scanner in self.scanners:
             for endpoint in endpoints:
                 try:
-                    scanner_findings = await scanner.scan(
-                        target, endpoint, credential
+                    scanner_findings = await asyncio.wait_for(
+                        scanner.scan(target, endpoint, credential),
+                        timeout=self.scanner_timeout,
                     )
-                except Exception:
+                except asyncio.TimeoutError:
+                    # A scanner that exceeds its budget must not stall the
+                    # scan; record the failure and move on.
+                    scan_errors += 1
+                    logger.warning(
+                        "Scanner %s timed out on %s %s",
+                        scanner.name,
+                        endpoint.method,
+                        endpoint.path,
+                    )
+                    session.add(
+                        Evidence(
+                            scan_id=scan.id,
+                            scanner_name=scanner.name,
+                            request_data=(
+                                f"{endpoint.method} "
+                                f"{target.base_url}{endpoint.path}"
+                            ),
+                            response_data=json.dumps({"error": "timeout"}),
+                        )
+                    )
+                    continue
+                except Exception as exc:
                     # One failing scanner must not abort the whole scan run.
+                    scan_errors += 1
                     logger.exception(
                         "Scanner %s failed on %s %s",
                         scanner.name,
                         endpoint.method,
                         endpoint.path,
+                    )
+                    session.add(
+                        Evidence(
+                            scan_id=scan.id,
+                            scanner_name=scanner.name,
+                            request_data=(
+                                f"{endpoint.method} "
+                                f"{target.base_url}{endpoint.path}"
+                            ),
+                            response_data=json.dumps({"error": str(exc)}),
+                        )
                     )
                     continue
                 findings.extend(scanner_findings)
@@ -119,7 +162,7 @@ class ScanOrchestrator:
                     )
                 )
 
-        scan.status = "completed"
+        scan.status = "completed" if scan_errors == 0 else "completed_with_errors"
         scan.finished_at = datetime.now(timezone.utc)
         await session.commit()
-        return ScanResult(scan_id=scan_id, findings=findings)
+        return ScanResult(scan_id=scan_id, findings=findings, errors=scan_errors)

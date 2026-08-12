@@ -74,6 +74,23 @@ class BrokenScanner(BaseScanner):
         raise RuntimeError("boom")
 
 
+class RaisingScanner(BaseScanner):
+    name = "raising"
+    description = "Raises on every endpoint."
+
+    async def scan(self, target, endpoint, credentials):
+        raise RuntimeError("intentional scanner failure")
+
+
+class SlowScanner(BaseScanner):
+    name = "slow"
+    description = "Sleeps past any reasonable timeout."
+
+    async def scan(self, target, endpoint, credentials):
+        await asyncio.sleep(5)
+        return []
+
+
 def test_orchestrator_with_zero_scanners_returns_empty_result(
     client, unique_email
 ) -> None:
@@ -143,18 +160,22 @@ def test_orchestrator_collects_findings_and_survives_broken_scanner(
                 assert len(result.findings) == 1
                 assert result.findings[0].title == "Echo finding"
                 assert result.findings[0].evidence == "GET /health"
+                assert result.errors == 1
 
-                # Evidence was persisted for the echo scanner only.
+                # The scan completed with errors; evidence records both
+                # the failure and the successful echo run.
                 scan = await session.get(Scan, result.scan_id)
                 assert scan is not None
-                assert scan.status == "completed"
+                assert scan.status == "completed_with_errors"
                 evidence = (
                     await session.scalars(
                         select(Evidence).where(Evidence.scan_id == scan.id)
                     )
                 ).all()
-                assert len(evidence) == 1
-                assert evidence[0].scanner_name == "echo"
+                by_scanner = {row.scanner_name: row for row in evidence}
+                assert "broken" in by_scanner
+                assert "error" in (by_scanner["broken"].response_data or "")
+                assert "echo" in by_scanner
         finally:
             await engine.dispose()
 
@@ -194,6 +215,119 @@ def test_register_adds_scanner(client, unique_email) -> None:
                 orchestrator.register(EchoScanner())
                 result = await orchestrator.run_scan(target, session)
                 assert len(result.findings) == 1
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_failing_scanner_does_not_abort_scan(
+    client, unique_email
+) -> None:
+    """One scanner raising still yields the others' findings and a
+    completed_with_errors status."""
+    _, token = _register(client, _email("owner"))
+    target_id = _create_project_with_target(client, token)
+    import json
+
+    spec = {
+        "openapi": "3.0.3",
+        "info": {"title": "API", "version": "1.0.0"},
+        "paths": {"/health": {"get": {"responses": {"200": {"description": "ok"}}}}},
+    }
+    upload = client.post(
+        f"/targets/{target_id}/import-openapi",
+        files={
+            "file": (
+                "openapi.json",
+                json.dumps(spec).encode(),
+                "application/json",
+            )
+        },
+        headers=_auth(token),
+    )
+    assert upload.status_code == 200
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                target = await session.get(Target, target_id)
+                assert target is not None
+                result = await ScanOrchestrator(
+                    [RaisingScanner(), EchoScanner()]
+                ).run_scan(target, session)
+                # Echo's finding still comes through.
+                assert len(result.findings) == 1
+                assert result.findings[0].title == "Echo finding"
+                assert result.errors == 1
+
+                scan = await session.get(Scan, result.scan_id)
+                assert scan is not None
+                assert scan.status == "completed_with_errors"
+
+                evidence = (
+                    await session.scalars(
+                        select(Evidence).where(Evidence.scan_id == scan.id)
+                    )
+                ).all()
+                by_scanner = {row.scanner_name: row for row in evidence}
+                assert "raising" in by_scanner
+                assert "error" in (by_scanner["raising"].response_data or "")
+                assert "echo" in by_scanner
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_slow_scanner_times_out(client, unique_email) -> None:
+    """A scanner exceeding its per-scanner timeout is skipped, not fatal."""
+    _, token = _register(client, _email("owner"))
+    target_id = _create_project_with_target(client, token)
+    import json
+
+    spec = {
+        "openapi": "3.0.3",
+        "info": {"title": "API", "version": "1.0.0"},
+        "paths": {"/health": {"get": {"responses": {"200": {"description": "ok"}}}}},
+    }
+    upload = client.post(
+        f"/targets/{target_id}/import-openapi",
+        files={
+            "file": (
+                "openapi.json",
+                json.dumps(spec).encode(),
+                "application/json",
+            )
+        },
+        headers=_auth(token),
+    )
+    assert upload.status_code == 200
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                target = await session.get(Target, target_id)
+                assert target is not None
+                result = await ScanOrchestrator(
+                    [SlowScanner()], scanner_timeout=0.2
+                ).run_scan(target, session)
+                assert result.findings == []
+                assert result.errors == 1
+
+                scan = await session.get(Scan, result.scan_id)
+                assert scan is not None
+                assert scan.status == "completed_with_errors"
+
+                evidence = (
+                    await session.scalars(
+                        select(Evidence).where(Evidence.scan_id == scan.id)
+                    )
+                ).all()
+                assert len(evidence) == 1
+                assert "timeout" in (evidence[0].response_data or "")
         finally:
             await engine.dispose()
 
