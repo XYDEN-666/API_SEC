@@ -22,6 +22,7 @@ import time
 import pytest
 import uvicorn
 from fastapi import FastAPI, Response
+from fastapi.responses import PlainTextResponse
 
 from app.models import Endpoint, Target
 from app.scanners.base import Confidence, Finding, Severity
@@ -129,12 +130,51 @@ def http_target_factory():
         thread.join(timeout=10)
 
 
+@pytest.fixture
+def http_sqli_target():
+    """Fixture target with error-based SQLi behavior on /users/{user_id}
+    and /search (query param)."""
+    started: list[tuple[uvicorn.Server, threading.Thread]] = []
+
+    def _start(vulnerable: bool) -> str:
+        app = FastAPI()
+
+        @app.get("/users/{user_id}")
+        def user(user_id: str):
+            if vulnerable and "'" in user_id:
+                return PlainTextResponse(
+                    'psycopg2.errors.SyntaxError: syntax error at or near "\'" '
+                    "LINE 1: ... SQLSTATE 42601"
+                )
+            return {"id": user_id, "ok": True}
+
+        @app.get("/search")
+        def search(q: str = ""):
+            if vulnerable and "'" in q:
+                return PlainTextResponse(
+                    "sqlalchemy.exc.ProgrammingError: syntax error near "
+                    '"\'" SQLSTATE 42601'
+                )
+            return {"query": q, "ok": True}
+
+        base_url, server, thread = _start_server(app)
+        started.append((server, thread))
+        return base_url
+
+    yield _start
+
+    for server, thread in started:
+        server.should_exit = True
+        thread.join(timeout=10)
+
+
 async def run_scanner_against_target(
     scanner,
     base_url: str,
     path: str = "/",
     method: str = "GET",
     credentials=None,
+    parameters=None,
 ) -> list[Finding]:
     """Run ``scanner.scan()`` against the fixture target and validate shape.
 
@@ -150,7 +190,7 @@ async def run_scanner_against_target(
         target_id=1,
         path=path,
         method=method,
-        parameters=None,
+        parameters=parameters,
     )
     findings = await scanner.scan(target, endpoint, credentials)
     assert_findings_shape(findings)
