@@ -3,6 +3,9 @@
 import asyncio
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
+
+import jwt
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -127,6 +130,62 @@ def test_default_scanners_all_report_findings(
                 assert {"headers", "cors", "http_methods"} <= scanner_names, (
                     f"expected all default scanners, got {scanner_names}"
                 )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_jwt_finding_alongside_week6_findings(
+    client, http_target_factory, unique_email
+) -> None:
+    """A bad JWT produces its finding alongside the other default scanners'."""
+    bad_token = jwt.encode(
+        {"sub": "1"},  # no exp on purpose
+        "some-secret",
+        algorithm="HS256",
+    )
+    base_url = http_target_factory(
+        {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
+        },
+        allow_methods=["TRACE"],
+        body={"token": bad_token},
+    )
+    _, token = _register(client, _email("owner"))
+    target_id = _create_target(client, token, base_url)
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                target = await session.get(Target, target_id)
+                assert target is not None
+
+                result = await ScanOrchestrator().run_scan(target, session)
+                titles = {finding.title for finding in result.findings}
+
+                # JWT scanner finding.
+                assert "JWT missing exp claim" in titles
+                # Week 6 scanner findings.
+                assert any(
+                    "Strict-Transport-Security" in title
+                    or "Content-Security-Policy" in title
+                    for title in titles
+                )
+                assert any("CORS" in title for title in titles)
+                assert any("method enabled" in title for title in titles)
+
+                scan = await session.get(Scan, result.scan_id)
+                assert scan is not None
+                evidence = (
+                    await session.scalars(
+                        select(Evidence).where(Evidence.scan_id == scan.id)
+                    )
+                ).all()
+                scanner_names = {row.scanner_name for row in evidence}
+                assert {"headers", "cors", "http_methods", "jwt"} <= scanner_names
         finally:
             await engine.dispose()
 
