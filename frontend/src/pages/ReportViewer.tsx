@@ -18,16 +18,18 @@ const SEVERITY_ORDER: Record<string, number> = {
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  "api1:2023": "API1: Broken Object Level Authorization",
-  "api2:2023": "API2: Broken Authentication",
-  "api3:2023": "API3: Broken Object Property Level Authorization",
-  "api4:2023": "API4: Unrestricted Resource Consumption",
-  "api5:2023": "API5: Broken Function Level Authorization",
-  "api6:2023": "API6: Unrestricted Access to Sensitive Business Flows",
-  "api7:2023": "API7: Server-Side Request Forgery",
-  "api8:2023": "API8: Security Misconfiguration",
-  "api9:2023": "API9: Improper Inventory Management",
-  "api10:2023": "API10: Unsafe Consumption of APIs",
+  // Keep these in sync with backend/app/services/owasp_mapping.py so the
+  // in-app badges match the HTML/PDF/JSON report labels exactly.
+  "api1:2023": "API1:2023 Broken Object Level Authorization",
+  "api2:2023": "API2:2023 Broken Authentication",
+  "api3:2023": "API3:2023 Broken Object Property Level Authorization",
+  "api4:2023": "API4:2023 Unrestricted Resource Consumption",
+  "api5:2023": "API5:2023 Broken Function Level Authorization",
+  "api6:2023": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+  "api7:2023": "API7:2023 Server-Side Request Forgery",
+  "api8:2023": "API8:2023 Security Misconfiguration",
+  "api9:2023": "API9:2023 Improper Inventory Management",
+  "api10:2023": "API10:2023 Unsafe Consumption of APIs",
 };
 
 const POLL_INTERVAL_MS = 2000;
@@ -240,7 +242,7 @@ export default function ReportViewer() {
                     {severityLabel(finding.severity)}
                   </span>{" "}
                   <span className="badge risk">
-                    Risk: {finding.risk_label} ({finding.risk_score}/10)
+                    Risk: {finding.risk_label} ({finding.risk_score.toFixed(1)}/10)
                   </span>
                 </p>
                 <p>{finding.description}</p>
