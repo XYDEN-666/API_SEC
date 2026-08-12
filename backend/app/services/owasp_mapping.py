@@ -35,6 +35,19 @@ OWASP_API_TOP_10_2023: dict[str, str] = {
     "sqli_indicators": "api10:2023",
 }
 
+OWASP_API_TOP_10_2023_LABELS: dict[str, str] = {
+    "api1:2023": "API1:2023 Broken Object Level Authorization",
+    "api2:2023": "API2:2023 Broken Authentication",
+    "api3:2023": "API3:2023 Broken Object Property Level Authorization",
+    "api4:2023": "API4:2023 Unrestricted Resource Consumption",
+    "api5:2023": "API5:2023 Broken Function Level Authorization",
+    "api6:2023": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+    "api7:2023": "API7:2023 Server-Side Request Forgery",
+    "api8:2023": "API8:2023 Security Misconfiguration",
+    "api9:2023": "API9:2023 Improper Inventory Management",
+    "api10:2023": "API10:2023 Unsafe Consumption of APIs",
+}
+
 
 def category_for_scanner(scanner_name: str) -> str:
     """Return the OWASP API Top 10 (2023) category for a scanner name.
@@ -52,3 +65,8 @@ def category_for_scanner(scanner_name: str) -> str:
             f"No OWASP API Top 10 category registered for scanner "
             f"{scanner_name!r}"
         ) from None
+
+
+def category_label(category: str) -> str:
+    """Return a human-readable label for an OWASP category identifier."""
+    return OWASP_API_TOP_10_2023_LABELS.get(category, category)
