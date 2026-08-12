@@ -16,6 +16,7 @@ from app.scanners.base import BaseScanner, Finding
 from app.scanners.cors import CORSScanner
 from app.scanners.headers import HeaderScanner
 from app.scanners.http_methods import HTTPMethodScanner
+from app.scanners.idor_bola import IDORScanner
 from app.scanners.jwt_config import JWTScanner
 from app.scanners.sqli_indicators import SQLiScanner
 
@@ -25,6 +26,7 @@ _DEFAULT_SCANNER_CLASSES: tuple[type[BaseScanner], ...] = (
     HeaderScanner,
     CORSScanner,
     HTTPMethodScanner,
+    IDORScanner,
     JWTScanner,
     SQLiScanner,
 )

@@ -336,3 +336,117 @@ def test_full_scan_finds_error_based_sqli(
             await engine.dispose()
 
     asyncio.run(_run())
+
+
+def test_full_scan_finds_idor_alongside_other_scanners(
+    client, http_idor_target, unique_email
+) -> None:
+    """A fixture with an intentional BOLA flaw yields the IDOR finding in a
+    full default scan (six scanners), alongside the other scanners' output."""
+    base_url, _ = http_idor_target(mode="bola")
+    _, token = _register(client, _email("owner"))
+
+    project = client.post(
+        "/projects", json={"name": "IDOR Defaults Project"}, headers=_auth(token)
+    )
+    assert project.status_code == 201
+    target = client.post(
+        f"/projects/{project.json()['id']}/targets",
+        json={"name": "IDOR API", "base_url": base_url},
+        headers=_auth(token),
+    )
+    assert target.status_code == 201
+    target_id = target.json()["id"]
+
+    spec = {
+        "openapi": "3.0.3",
+        "info": {"title": "IDOR API", "version": "1.0.0"},
+        "paths": {
+            "/users/{user_id}": {
+                "get": {
+                    "parameters": [
+                        {
+                            "name": "user_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    upload = client.post(
+        f"/targets/{target_id}/import-openapi",
+        files={
+            "file": (
+                "openapi.json",
+                json.dumps(spec).encode(),
+                "application/json",
+            )
+        },
+        headers=_auth(token),
+    )
+    assert upload.status_code == 200
+
+    for identity, secret in (
+        ("admin", "admin-secret"),
+        ("intruder", "other-secret"),
+    ):
+        created = client.post(
+            f"/targets/{target_id}/credentials",
+            json={
+                "identity_name": identity,
+                "auth_type": "api_key",
+                "value": secret,
+            },
+            headers=_auth(token),
+        )
+        assert created.status_code == 201
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                target_obj = await session.get(Target, target_id)
+                assert target_obj is not None
+
+                result = await ScanOrchestrator().run_scan(target_obj, session)
+                titles = {finding.title for finding in result.findings}
+
+                # IDOR finding from the BOLA flaw.
+                assert (
+                    "Access-control anomaly detected (IDOR/BOLA)" in titles
+                ), f"idor finding missing: {titles}"
+                # Other scanners' output is present too (this fixture returns
+                # no security headers, so headers finds them).
+                assert any(
+                    "Strict-Transport-Security" in title
+                    or "X-Frame-Options" in title
+                    for title in titles
+                ), f"headers findings missing: {titles}"
+
+                scan = await session.get(Scan, result.scan_id)
+                assert scan is not None
+                assert scan.status == "completed"
+                evidence = (
+                    await session.scalars(
+                        select(Evidence).where(
+                            Evidence.scan_id == scan.id
+                        )
+                    )
+                ).all()
+                scanner_names = {row.scanner_name for row in evidence}
+                assert {
+                    "headers",
+                    "cors",
+                    "http_methods",
+                    "jwt",
+                    "sqli_indicators",
+                    "idor_bola",
+                } <= scanner_names, f"missing scanner evidence: {scanner_names}"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
