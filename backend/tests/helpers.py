@@ -2,12 +2,12 @@
 
 import asyncio
 
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models import User
+from app.models import Project, User
 
 
 def cleanup_test_users() -> None:
@@ -17,6 +17,15 @@ def cleanup_test_users() -> None:
         engine = create_async_engine(settings.database_url)
         try:
             async with engine.begin() as connection:
+                # Projects first (and their cascading targets/authorization
+                # records), so user deletion never trips the owner FK.
+                await connection.execute(
+                    delete(Project).where(
+                        Project.owner_id.in_(
+                            select(User.id).where(User.email.like("test-%"))
+                        )
+                    )
+                )
                 await connection.execute(
                     delete(User).where(User.email.like("test-%"))
                 )
