@@ -86,7 +86,7 @@ def test_orchestrator_with_zero_scanners_returns_empty_result(
             async with AsyncSession(bind=engine) as session:
                 target = await session.get(Target, target_id)
                 assert target is not None
-                result = await ScanOrchestrator().run_scan(target, session)
+                result = await ScanOrchestrator(scanners=[]).run_scan(target, session)
                 assert result.findings == []
                 assert result.scan_id > 0
 
@@ -190,7 +190,7 @@ def test_register_adds_scanner(client, unique_email) -> None:
             async with AsyncSession(bind=engine) as session:
                 target = await session.get(Target, target_id)
                 assert target is not None
-                orchestrator = ScanOrchestrator()
+                orchestrator = ScanOrchestrator(scanners=[])
                 orchestrator.register(EchoScanner())
                 result = await orchestrator.run_scan(target, session)
                 assert len(result.findings) == 1

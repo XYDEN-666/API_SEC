@@ -12,8 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Credential, Endpoint, Evidence, Scan, Target
 from app.scanners.base import BaseScanner, Finding
+from app.scanners.cors import CORSScanner
+from app.scanners.headers import HeaderScanner
+from app.scanners.http_methods import HTTPMethodScanner
 
 logger = logging.getLogger("apishield.orchestrator")
+
+_DEFAULT_SCANNER_CLASSES: tuple[type[BaseScanner], ...] = (
+    HeaderScanner,
+    CORSScanner,
+    HTTPMethodScanner,
+)
 
 
 @dataclass
@@ -34,7 +43,10 @@ class ScanOrchestrator:
     """
 
     def __init__(self, scanners: Iterable[BaseScanner] | None = None) -> None:
-        self.scanners: list[BaseScanner] = list(scanners or [])
+        if scanners is None:
+            self.scanners = [scanner_cls() for scanner_cls in _DEFAULT_SCANNER_CLASSES]
+        else:
+            self.scanners = list(scanners)
 
     def register(self, scanner: BaseScanner) -> None:
         """Enable a scanner for subsequent runs."""
