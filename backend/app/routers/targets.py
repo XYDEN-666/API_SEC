@@ -13,13 +13,14 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.deps import get_current_user
-from app.models import Project, Target, User
+from app.models import Endpoint, Project, Target, User
 from app.routers.projects import get_owned_project
+from app.schemas.endpoint import EndpointResponse
 from app.schemas.target import TargetCreate, TargetResponse, TargetUpdate
 
 router = APIRouter(tags=["targets"])
@@ -178,6 +179,65 @@ def _validate_openapi3(spec: dict) -> None:
         )
 
 
+_HTTP_METHODS = {
+    "get",
+    "put",
+    "post",
+    "delete",
+    "options",
+    "head",
+    "patch",
+    "trace",
+}
+
+
+def _merge_parameters(*groups: list) -> list:
+    """Concatenate parameter groups, deduplicating by (name, in)."""
+    seen: set[tuple] = set()
+    merged: list = []
+    for group in groups:
+        for param in group:
+            if not isinstance(param, dict):
+                continue
+            key = (param.get("name"), param.get("in"))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(param)
+    return merged
+
+
+def _extract_endpoints(spec: dict) -> list[dict]:
+    """Flatten an OpenAPI spec into one row per path+method operation."""
+    endpoints: list[dict] = []
+    for path, path_item in spec.get("paths", {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        path_parameters = (
+            path_item.get("parameters")
+            if isinstance(path_item.get("parameters"), list)
+            else []
+        )
+        for method in _HTTP_METHODS:
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            operation_parameters = (
+                operation.get("parameters")
+                if isinstance(operation.get("parameters"), list)
+                else []
+            )
+            merged = _merge_parameters(path_parameters, operation_parameters)
+            endpoints.append(
+                {
+                    "path": path,
+                    "method": method.upper(),
+                    "parameters": merged or None,
+                }
+            )
+    return endpoints
+
+
 @router.post("/targets/{target_id}/import-openapi")
 async def import_openapi(
     target_id: int,
@@ -186,7 +246,7 @@ async def import_openapi(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, object]:
     """Parse and validate an OpenAPI 3.x document (JSON or YAML) upload."""
-    await _get_owned_target(target_id, current_user, session)
+    target = await _get_owned_target(target_id, current_user, session)
 
     raw = await file.read()
     try:
@@ -199,6 +259,22 @@ async def import_openapi(
 
     spec = _parse_document(text)
     _validate_openapi3(spec)
+    endpoints = _extract_endpoints(spec)
+
+    # Replace the target's extracted endpoints on every import.
+    await session.execute(
+        delete(Endpoint).where(Endpoint.target_id == target.id)
+    )
+    for endpoint in endpoints:
+        session.add(
+            Endpoint(
+                target_id=target.id,
+                path=endpoint["path"],
+                method=endpoint["method"],
+                parameters=endpoint["parameters"],
+            )
+        )
+    await session.commit()
 
     info = spec["info"]
     return {
@@ -207,4 +283,20 @@ async def import_openapi(
         "title": info.get("title"),
         "version": info.get("version"),
         "paths_count": len(spec["paths"]),
+        "endpoints_count": len(endpoints),
     }
+
+
+@router.get("/targets/{target_id}/endpoints", response_model=list[EndpointResponse])
+async def list_endpoints(
+    target_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[Endpoint]:
+    await _get_owned_target(target_id, current_user, session)
+    endpoints = await session.scalars(
+        select(Endpoint)
+        .where(Endpoint.target_id == target_id)
+        .order_by(Endpoint.id)
+    )
+    return list(endpoints)
