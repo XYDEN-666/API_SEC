@@ -18,6 +18,8 @@ services:
     build:
       context: ./frontend
     container_name: apishield-frontend
+    environment:
+      VITE_API_BASE_URL: http://backend:8000
     ports:
       - "5173:5173"
     depends_on:
