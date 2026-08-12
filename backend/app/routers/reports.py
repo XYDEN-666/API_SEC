@@ -10,6 +10,7 @@ from app.core.db import get_session
 from app.core.deps import get_current_user
 from app.models import User
 from app.routers.scans import get_owned_scan
+from app.schemas.report import ReportResponse
 from app.services.reports.data import build_report_data
 from app.services.reports.html_report import render_html_report
 from app.services.reports.pdf_report import render_pdf_report
@@ -48,3 +49,15 @@ async def scan_report_pdf(
             )
         },
     )
+
+
+@router.get("/scans/{scan_id}/report.json", response_model=ReportResponse)
+async def scan_report_json(
+    scan_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ReportResponse:
+    """Return the full findings, evidence and metadata as structured JSON."""
+    await get_owned_scan(scan_id, current_user, session)
+    data = await build_report_data(session, scan_id)
+    return ReportResponse.model_validate(data)
