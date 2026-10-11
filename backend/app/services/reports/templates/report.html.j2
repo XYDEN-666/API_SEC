@@ -111,6 +111,9 @@
           <dt>OWASP category</dt><dd>{{ finding.owasp_category }}</dd>
           <dt>Confidence</dt><dd>{{ finding.confidence }}</dd>
           <dt>Risk score</dt><dd>{{ finding.risk_score }}/10</dd>
+          {% if finding.evidence_text %}
+            <dt>Scanner evidence</dt><dd>{{ finding.evidence_text }}</dd>
+          {% endif %}
         </dl>
         {% if finding.evidence %}
           <details>

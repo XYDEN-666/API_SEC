@@ -183,6 +183,8 @@ def test_dashboard_summary_matches_seeded_db_for_owner(client) -> None:
     assert body["total_targets"] == 3
     assert body["total_scans"] == 4
     assert body["total_findings"] == 8
+    # Seeded titles are all distinct, so nothing collapses.
+    assert body["total_distinct_issues"] == 8
     assert body["findings_by_severity"] == {
         "critical": 2,
         "high": 2,
@@ -324,3 +326,56 @@ def test_dashboard_summary_is_isolated_per_user(client) -> None:
 
 def test_dashboard_summary_requires_auth(client) -> None:
     assert client.get("/dashboard/summary").status_code == 401
+
+
+def test_dashboard_distinct_issues_collapse_across_operations(client) -> None:
+    """The same issue seen through three operations counts once.
+
+    Scan findings are stored method-qualified, so a host-wide problem
+    observed via GET, PUT and DELETE is three rows; the distinct-issue count
+    reports the one underlying problem.
+    """
+    user_id, token = _register(client, _email("distinct"))
+    base_url = "http://collapse.example/probe"
+
+    async def _seed() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                project = Project(name="Collapse", owner_id=user_id)
+                session.add(project)
+                await session.flush()
+                target = Target(
+                    project_id=project.id, name="API", base_url=base_url
+                )
+                session.add(target)
+                await session.flush()
+                scan = Scan(
+                    target_id=target.id,
+                    status="completed",
+                    finished_at=datetime.now(timezone.utc),
+                )
+                session.add(scan)
+                await session.flush()
+                for method in ("GET", "PUT", "DELETE"):
+                    session.add(
+                        Finding(
+                            scan_id=scan.id,
+                            title="Missing Strict-Transport-Security",
+                            description="Seeded finding.",
+                            severity="medium",
+                            endpoint=f"{method} {base_url}",
+                            owasp_category="api8:2023",
+                            confidence="high",
+                        )
+                    )
+                await session.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_seed())
+
+    body = client.get("/dashboard/summary", headers=_auth(token)).json()
+    assert body["total_findings"] == 3
+    assert body["total_distinct_issues"] == 1
+    assert body["findings_by_severity"]["medium"] == 3

@@ -112,6 +112,11 @@ class BaseScanner(ABC):
     name: str = "base"
     #: Human-readable description of what the scanner checks.
     description: str = ""
+    #: When True the orchestrator calls :meth:`scan` once per target with
+    #: ``endpoint=None`` instead of once per endpoint. Use it for checks whose
+    #: result is a property of the API as a whole, so a host-wide
+    #: misconfiguration is reported once rather than once per operation.
+    target_level: bool = False
 
     @abstractmethod
     async def scan(
@@ -127,7 +132,8 @@ class BaseScanner(ABC):
                 ``target.base_url`` as the base for HTTP requests.
             endpoint: The specific endpoint to scan, or ``None`` when the
                 scanner operates at the target level (e.g. checking the
-                whole API for missing security headers).
+                whole API for missing security headers). Set
+                ``target_level = True`` to be called that way.
             credentials: Decrypted credentials (an internal value) to use for
                 authenticated scanning, or ``None`` for unauthenticated scans.
                 Never include the raw value in a finding's evidence.

@@ -4,6 +4,7 @@ import logging
 
 import httpx
 
+from app.scanners.auth import auth_headers
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
 from app.services.owasp_mapping import category_for_scanner
 
@@ -30,10 +31,13 @@ class HTTPMethodScanner(BaseScanner):
 
     async def scan(self, target, endpoint, credentials):
         url = f"{target.base_url}{endpoint.path}"
+        request_headers = auth_headers(credentials)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 responses = {
-                    method: await client.request(method, url)
+                    method: await client.request(
+                        method, url, headers=request_headers
+                    )
                     for method in self._PROBED_METHODS
                 }
         except httpx.RequestError as exc:

@@ -20,6 +20,7 @@ import re
 import httpx
 import jwt
 
+from app.scanners.auth import auth_headers
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
 from app.services.owasp_mapping import category_for_scanner
 
@@ -52,7 +53,9 @@ class JWTScanner(BaseScanner):
         url = f"{target.base_url}{endpoint.path}"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.request(endpoint.method, url)
+                response = await client.request(
+                    endpoint.method, url, headers=auth_headers(credentials)
+                )
         except httpx.RequestError as exc:
             logger.warning("JWTScanner could not reach %s: %s", url, exc)
             return []

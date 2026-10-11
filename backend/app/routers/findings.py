@@ -48,6 +48,7 @@ async def list_scan_findings(
             evidence_id=row.evidence_id,
             owasp_category=row.owasp_category,
             confidence=row.confidence,
+            evidence_text=row.evidence_text,
             created_at=row.created_at,
             risk_score=risk_score(row.severity, row.confidence),
             risk_label=risk_label(risk_score(row.severity, row.confidence)),

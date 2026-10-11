@@ -16,6 +16,13 @@ SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 _SEVERITY_RANK = {severity: index for index, severity in enumerate(SEVERITY_ORDER)}
 _RANK_CASE = case(_SEVERITY_RANK, value=Finding.severity)
 
+# An issue's location with any leading "METHOD " token stripped, so the same
+# host-wide problem seen through several operations on one path counts once.
+# Findings are stored method-qualified ("GET http://host/projects/{id}") to
+# keep GET and DELETE distinguishable; this groups them back together for the
+# user-facing issue count.
+_ISSUE_LOCATION = func.regexp_replace(Finding.endpoint, r"^[A-Z]+ ", "")
+
 
 async def get_dashboard_summary(session: AsyncSession, user_id: int) -> dict:
     """Return aggregate stats for one user's own projects."""
@@ -68,6 +75,21 @@ async def get_dashboard_summary(session: AsyncSession, user_id: int) -> dict:
         category: count for category, count in category_rows
     }
 
+    distinct_issue_rows = (
+        select(Finding.title, _ISSUE_LOCATION)
+        .join(Scan, Scan.id == Finding.scan_id)
+        .join(Target, Target.id == Scan.target_id)
+        .join(Project, Project.id == Target.project_id)
+        .where(Project.owner_id == user_id)
+        .distinct()
+        .subquery()
+    )
+    distinct_issues = (
+        await session.scalar(
+            select(func.count()).select_from(distinct_issue_rows)
+        )
+    ) or 0
+
     recent_scan_rows = (
         await session.execute(
             select(Scan, Target.id, Target.name)
@@ -110,6 +132,10 @@ async def get_dashboard_summary(session: AsyncSession, user_id: int) -> dict:
         "total_targets": targets,
         "total_scans": scans,
         "total_findings": sum(findings_by_severity.values()),
+        # Same data, deduplicated down to one row per (issue, location):
+        # total_findings counts every operation a scanner examined, this
+        # counts the distinct problems found.
+        "total_distinct_issues": distinct_issues,
         "findings_by_severity": findings_by_severity,
         "findings_by_category": findings_by_category,
         "recent_scans": recent_scans,

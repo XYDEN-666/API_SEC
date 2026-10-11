@@ -99,17 +99,42 @@ Details per scanner: [docs/scanners/](docs/scanners/).
 
 ## Frontend components (`frontend/src/`)
 
-- `api/client.ts` — typed API client; the JWT is kept in module memory only
-  (never `localStorage`) and attached to every request.
-- `auth/AuthContext.tsx` — login/register/logout state.
-- `pages/` — Home, Projects, ProjectDetail (targets/import/credentials),
-  ReportViewer (findings + downloads).
-- `components/` — layout and protected-route wrappers.
+The SPA is a thin client over the API, organised as:
 
-The report viewer fetches `GET /scans/{id}/report.json` and renders findings
-severity-sorted with OWASP badges and expandable evidence; the HTML/PDF/JSON
-download buttons fetch the corresponding report endpoints with the JWT and
-save them as blobs.
+| Area | Responsibility |
+| --- | --- |
+| `api/client.ts` | Typed API client. The JWT lives in module memory only (never `localStorage`) and is attached to every request; a 401 clears the session. |
+| `auth/AuthContext.tsx` | login / register / logout state plus the expired-session flag. |
+| `components/AppShell.tsx` | Sidebar + top-bar shell, theme switch, backend health indicator. |
+| `components/ui/` | Design-system primitives: Button, Card, StatCard, Badge/StatusBadge, Field inputs, Modal/ConfirmDialog, Tabs, Toaster, EmptyState/Skeleton. |
+| `hooks/` | `useAsyncData` (loading/error/reload), `useTheme`, `useDocumentTitle`. |
+| `lib/` | Pure JSDoc-typed helpers: severity/status/OWASP vocabulary, risk bands, finding filter/sort/aggregate, formatting, validation. |
+| `styles/` | `tokens.css` (light + dark themes), `base.css`, `layout.css`, `components.css`. |
+
+Routes:
+
+| Path | Page |
+| --- | --- |
+| `/` | Dashboard — KPIs, severity donut, OWASP breakdown, recent scans |
+| `/projects` | Project list with create/rename/delete |
+| `/projects/:id` | Targets; `?tab=authorization` for authorization records |
+| `/targets/:id` | Endpoints, OpenAPI import, credentials, scan history |
+| `/targets/:id/scans/:scanId` | Scan results: severity filters, search, evidence, HTML/PDF/JSON export |
+| `/login`, `/register` | Authentication |
+
+The scan-results page fetches `GET /scans/{id}/report.json` and renders findings
+severity-sorted with OWASP badges, risk meters and expandable evidence; the
+HTML/PDF/JSON download buttons fetch the corresponding report endpoints with
+the JWT and save them as blobs. While a scan is queued or running the page
+polls the report until it settles, so a run started from the target page lands
+on its own results automatically. Running a scan from the UI requires an
+explicit authorization acknowledgement, and a missing authorization record is
+surfaced as a warning on the target page.
+
+Frontend tests: `frontend/tests/` covers the pure helpers with `node:test`
+(`npm test`), and `frontend/scripts/ui-smoke.mjs` drives the real application
+in headless Chrome over the DevTools pipe (`npm run test:ui`), asserting on
+rendered output, layout geometry and console errors.
 
 ## Data model (key tables)
 

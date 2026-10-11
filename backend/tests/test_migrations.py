@@ -117,3 +117,28 @@ def test_alembic_upgrade_head_creates_project_tables_with_fks() -> None:
             await engine.dispose()
 
     _run(verify())
+
+
+def test_alembic_upgrade_head_adds_finding_evidence_text() -> None:
+    """Migration 0008 persists the scanner's proof text on findings."""
+    command.upgrade(Config("alembic.ini"), "head")
+
+    async def verify() -> None:
+        engine = create_async_engine(settings.database_url)
+        try:
+            async with engine.connect() as connection:
+                rows = (
+                    await connection.execute(
+                        text(
+                            "SELECT column_name FROM information_schema.columns "
+                            "WHERE table_name = 'findings' "
+                            "ORDER BY ordinal_position"
+                        )
+                    )
+                ).all()
+                columns = [row[0] for row in rows]
+                assert "evidence_text" in columns, columns
+        finally:
+            await engine.dispose()
+
+    _run(verify())

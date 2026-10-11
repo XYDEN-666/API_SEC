@@ -4,6 +4,7 @@ import logging
 
 import httpx
 
+from app.scanners.auth import auth_headers
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
 from app.services.owasp_mapping import category_for_scanner
 
@@ -32,7 +33,7 @@ class CORSScanner(BaseScanner):
 
     async def scan(self, target, endpoint, credentials):
         url = f"{target.base_url}{endpoint.path}"
-        origin_headers = {"Origin": _ATTACKER_ORIGIN}
+        origin_headers = {**auth_headers(credentials), "Origin": _ATTACKER_ORIGIN}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 simple = await client.request(

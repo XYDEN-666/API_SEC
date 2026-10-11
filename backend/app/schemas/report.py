@@ -27,6 +27,7 @@ class ReportFinding(BaseModel):
     evidence_id: int | None
     owasp_category: str
     confidence: str
+    evidence_text: str | None
     created_at: datetime
     risk_score: float
     risk_label: str

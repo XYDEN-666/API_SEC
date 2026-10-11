@@ -1,6 +1,12 @@
 """JSON report tests (Task 11.3)."""
 
 from app.schemas.report import ReportResponse
+from app.scanners.base import (
+    BaseScanner,
+    Confidence,
+    Finding as ScannerFinding,
+    Severity,
+)
 from tests.report_fixtures import (
     ReportScanner,
     _auth,
@@ -9,6 +15,42 @@ from tests.report_fixtures import (
     create_target_with_endpoint,
     run_scan,
 )
+
+
+class CategoryOrderScanner(BaseScanner):
+    """Emits API10 first on purpose, to prove numeric category ordering."""
+
+    name = "order_fixture"
+    description = "Produces one finding per OWASP category."
+
+    async def scan(self, target, endpoint, credentials):
+        def make(title: str, category: str) -> ScannerFinding:
+            return ScannerFinding(
+                title=title,
+                description=f"{title} description.",
+                severity=Severity.MEDIUM,
+                evidence=f"evidence for {title}",
+                owasp_category=category,
+                confidence=Confidence.HIGH,
+            )
+
+        return [
+            make("Ten", "api10:2023"),
+            make("Two", "api2:2023"),
+            make("One", "api1:2023"),
+        ]
+
+
+def test_report_orders_owasp_categories_numerically(client, unique_email) -> None:
+    """api10 must not sort between api1 and api2 (lexicographic ordering)."""
+    _, token = _register(client, _email("owner"))
+    target_id = create_target_with_endpoint(client, token)
+    scan_id = run_scan(target_id, CategoryOrderScanner())
+
+    response = client.get(f"/scans/{scan_id}/report.json", headers=_auth(token))
+    assert response.status_code == 200
+    categories = [item["owasp_category"] for item in response.json()["findings"]]
+    assert categories == ["api1:2023", "api2:2023", "api10:2023"]
 
 
 def test_report_json_validates_and_matches_findings_api(
@@ -68,6 +110,10 @@ def test_report_json_validates_and_matches_findings_api(
         assert finding.evidence.request_data == "GET http://127.0.0.1:9/health"
         assert finding.evidence.response_data is not None
         assert finding.evidence.timestamp is not None
+        # The scanner's own proof text is part of the report, not just the
+        # per-endpoint evidence record.
+        assert finding.evidence_text is not None
+        assert finding.evidence_text.startswith("request-")
 
     # Includes every finding present in the HTML report.
     html = client.get(f"/scans/{scan_id}/report.html", headers=_auth(token))

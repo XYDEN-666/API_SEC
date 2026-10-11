@@ -30,7 +30,11 @@ class DashboardSummary(BaseModel):
     total_projects: int
     total_targets: int
     total_scans: int
+    #: Every finding row across the user's scans.
     total_findings: int
+    #: The same findings collapsed to one row per (issue, location); this is
+    #: the number of distinct problems, which is what a reader expects.
+    total_distinct_issues: int
     findings_by_severity: dict[str, int]
     findings_by_category: dict[str, int]
     recent_scans: list[RecentScan]

@@ -1,0 +1,192 @@
+/**
+ * Design tokens for APIShield.
+ *
+ * Every colour, radius, shadow and spacing value used by the app resolves to
+ * one of these variables, so the whole UI can be re-themed from one place.
+ * The dark theme is a pure token override on <html data-theme="dark">.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Typography */
+  --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* Surfaces */
+  --bg: #f4f6fb;
+  --bg-accent: #e9edf7;
+  --surface: #ffffff;
+  --surface-2: #f7f8fc;
+  --surface-3: #eef1f8;
+  --surface-inverse: #0f172a;
+  --overlay: rgba(15, 23, 42, 0.55);
+
+  /* Text */
+  --text: #111827;
+  --text-muted: #5a6478;
+  --text-subtle: #808aa0;
+  --text-inverse: #f8fafc;
+  --text-on-accent: #ffffff;
+
+  /* Lines */
+  --border: #e2e6f0;
+  --border-strong: #cfd5e4;
+
+  /* Brand */
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef0ff;
+  --accent-border: #c7cafb;
+  --accent-contrast: #312e81;
+
+  /* Severity scale (shared with the backend report colours) */
+  --sev-critical: #b91c1c;
+  --sev-critical-soft: #fee2e2;
+  --sev-high: #ea580c;
+  --sev-high-soft: #ffedd5;
+  --sev-medium: #b45309;
+  --sev-medium-soft: #fef3c7;
+  --sev-low: #15803d;
+  --sev-low-soft: #dcfce7;
+  --sev-info: #475569;
+  --sev-info-soft: #e2e8f0;
+
+  /* Semantic */
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
+  --warning: #b45309;
+  --warning-soft: #fef3c7;
+  --info: #1d4ed8;
+  --info-soft: #dbeafe;
+  --running: #4f46e5;
+  --running-soft: #e0e7ff;
+
+  /* Charts */
+  --chart-grid: #e6eaf3;
+  --chart-axis: #6b7488;
+  --chart-surface: #ffffff;
+  --chart-ink: #111827;
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.1);
+  --shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.22);
+
+  /* Sidebar is dark in both themes for a consistent product identity. */
+  --sidebar-bg: linear-gradient(180deg, #131c33 0%, #0e1626 100%);
+  --sidebar-text: #c7d2e5;
+  --sidebar-text-strong: #ffffff;
+  --sidebar-muted: #8494b0;
+  --sidebar-hover: rgba(148, 163, 184, 0.14);
+  --sidebar-active: rgba(99, 102, 241, 0.22);
+  --sidebar-border: rgba(148, 163, 184, 0.18);
+
+  /* Motion */
+  --transition: 140ms ease;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0b1120;
+  --bg-accent: #111a2e;
+  --surface: #131c2f;
+  --surface-2: #182238;
+  --surface-3: #1f2b45;
+  --surface-inverse: #f8fafc;
+  --overlay: rgba(2, 6, 23, 0.7);
+
+  --text: #e8edf8;
+  --text-muted: #a2adc4;
+  --text-subtle: #7d89a3;
+  --text-inverse: #0b1120;
+
+  --border: #26324b;
+  --border-strong: #35435f;
+
+  --accent: #7c83ff;
+  --accent-hover: #9298ff;
+  --accent-soft: #1c2340;
+  --accent-border: #3b4380;
+  --accent-contrast: #c7cbff;
+
+  --sev-critical: #f87171;
+  --sev-critical-soft: #3b1618;
+  --sev-high: #fb923c;
+  --sev-high-soft: #3a2312;
+  --sev-medium: #fbbf24;
+  --sev-medium-soft: #3a2e12;
+  --sev-low: #4ade80;
+  --sev-low-soft: #102b1c;
+  --sev-info: #a5b4cd;
+  --sev-info-soft: #1e2637;
+
+  --success: #4ade80;
+  --success-soft: #102b1c;
+  --danger: #f87171;
+  --danger-soft: #3b1618;
+  --warning: #fbbf24;
+  --warning-soft: #3a2e12;
+  --info: #7dabff;
+  --info-soft: #16243f;
+  --running: #9aa2ff;
+  --running-soft: #1e2444;
+
+  --chart-grid: #26324b;
+  --chart-axis: #98a4bd;
+  --chart-surface: #131c2f;
+  --chart-ink: #e8edf8;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.6);
+
+  --sidebar-bg: linear-gradient(180deg, #0d1526 0%, #080e1c 100%);
+  --sidebar-border: rgba(148, 163, 184, 0.14);
+}
+
+/* Categorical palette used by the OWASP category chart. */
+:root {
+  --series-1: #4f46e5;
+  --series-2: #0ea5e9;
+  --series-3: #14b8a6;
+  --series-4: #84cc16;
+  --series-5: #f59e0b;
+  --series-6: #f43f5e;
+  --series-7: #a855f7;
+  --series-8: #0891b2;
+  --series-9: #65a30d;
+  --series-10: #e11d48;
+}

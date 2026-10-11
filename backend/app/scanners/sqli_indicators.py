@@ -6,18 +6,26 @@ near/at or near", SQL driver stack traces). This is error-based indicator
 detection only — time-based SQLi is Deferred scope and is NOT built here.
 """
 
+import asyncio
 import logging
 import re
 from urllib.parse import quote
 
 import httpx
 
+from app.scanners.auth import auth_headers
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
 from app.services.owasp_mapping import category_for_scanner
 
 logger = logging.getLogger("apishield.scanners.sqli")
 
 _OWASP_CATEGORY = category_for_scanner("sqli_indicators")
+
+#: Probes are independent, so a handful run at once. Without this a spec with
+#: several parameters issues dozens of sequential requests and blows the
+#: orchestrator's per-scanner timeout, losing every SQLi finding for the
+#: endpoint.
+_MAX_CONCURRENT_PROBES = 8
 
 _PAYLOADS = (
     "'",
@@ -61,25 +69,35 @@ class SQLiScanner(BaseScanner):
         # many payloads triggered it, so path and query injection behave the
         # same and reports don't drown in per-payload duplicates.
         endpoint_key = f"{target.base_url}{endpoint.path or '/'}"
-        findings: list[Finding] = []
-        matched_by_key: dict[tuple[str, str], list[str]] = {}
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for url in _injection_urls(target, endpoint):
+        headers = auth_headers(credentials)
+        limiter = asyncio.Semaphore(_MAX_CONCURRENT_PROBES)
+
+        async def probe(
+            client: httpx.AsyncClient, url: str
+        ) -> tuple[str, str | None]:
+            async with limiter:
                 try:
-                    response = await client.get(url)
+                    response = await client.get(url, headers=headers)
                 except httpx.RequestError as exc:
                     logger.debug("SQLi probe failed for %s: %s", url, exc)
-                    continue
+                    return url, None
+            body = response.text.lower()
+            return url, next(
+                (sig for sig in _DB_ERROR_SIGNATURES if sig in body), None
+            )
 
-                body = response.text.lower()
-                matched = next(
-                    (sig for sig in _DB_ERROR_SIGNATURES if sig in body),
-                    None,
-                )
-                if matched is None:
-                    continue
-                matched_by_key.setdefault((endpoint_key, matched), []).append(url)
+        matched_by_key: dict[tuple[str, str], list[str]] = {}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            results = await asyncio.gather(
+                *(probe(client, url) for url in _injection_urls(target, endpoint))
+            )
 
+        for url, matched in results:
+            if matched is None:
+                continue
+            matched_by_key.setdefault((endpoint_key, matched), []).append(url)
+
+        findings: list[Finding] = []
         for (key, matched), urls in matched_by_key.items():
             urls_text = "; ".join(urls[:5])
             if len(urls) > 5:

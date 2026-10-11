@@ -34,6 +34,18 @@ _DEFAULT_SCANNER_CLASSES: tuple[type[BaseScanner], ...] = (
 )
 
 
+def _endpoint_url(target: Target, endpoint: Endpoint | None) -> str:
+    """Canonical identifier for the thing that was scanned.
+
+    Method-qualified for per-endpoint scans (so GET /a and DELETE /a stay
+    distinguishable), and the bare base URL for target-level scans, which are
+    a statement about the API as a whole rather than about one operation.
+    """
+    if endpoint is None:
+        return target.base_url
+    return f"{endpoint.method} {target.base_url}{endpoint.path}"
+
+
 @dataclass
 class ScanResult:
     """Outcome of an orchestrated scan run."""
@@ -71,6 +83,7 @@ class ScanOrchestrator:
         self,
         target: Target,
         session: AsyncSession,
+        scan_id: int | None = None,
     ) -> ScanResult:
         """Scan ``target`` with every registered scanner.
 
@@ -78,6 +91,10 @@ class ScanOrchestrator:
             target: The target being scanned.
             session: Async DB session used to load the target's endpoints
                 and credentials.
+            scan_id: Reuse an existing Scan row (typically one the API already
+                created with status ``queued``) instead of creating a new one.
+                The scan API needs a real id to hand back immediately, so it
+                creates the row and the worker runs against it.
 
         Returns:
             A :class:`ScanResult` with the persisted scan id and all findings.
@@ -96,9 +113,15 @@ class ScanOrchestrator:
         )
         credential = credentials[0] if credentials else None
 
-        scan = Scan(target_id=target.id, status="running")
-        session.add(scan)
-        await session.flush()
+        if scan_id is None:
+            scan = Scan(target_id=target.id, status="running")
+            session.add(scan)
+            await session.flush()
+        else:
+            scan = await session.get(Scan, scan_id)
+            if scan is None:
+                raise LookupError(f"Scan {scan_id} not found")
+            scan.status = "running"
         scan_id = scan.id
         deduplicator = FindingDeduplicator(scan_id=scan_id)
 
@@ -107,7 +130,13 @@ class ScanOrchestrator:
         for scanner in self.scanners:
             # Provide the full credential set for multi-identity scanners.
             scanner.credentials = credentials
-            for endpoint in endpoints:
+            # A target-level scanner inspects the API as a whole, so it runs
+            # once with no endpoint instead of once per operation.
+            units: list[Endpoint | None] = (
+                [None] if scanner.target_level else endpoints
+            )
+            for endpoint in units:
+                endpoint_url = _endpoint_url(target, endpoint)
                 try:
                     scanner_findings = await asyncio.wait_for(
                         scanner.scan(target, endpoint, credential),
@@ -118,19 +147,15 @@ class ScanOrchestrator:
                     # scan; record the failure and move on.
                     scan_errors += 1
                     logger.warning(
-                        "Scanner %s timed out on %s %s",
+                        "Scanner %s timed out on %s",
                         scanner.name,
-                        endpoint.method,
-                        endpoint.path,
+                        endpoint_url,
                     )
                     session.add(
                         Evidence(
                             scan_id=scan.id,
                             scanner_name=scanner.name,
-                            request_data=(
-                                f"{endpoint.method} "
-                                f"{target.base_url}{endpoint.path}"
-                            ),
+                            request_data=endpoint_url,
                             response_data=json.dumps({"error": "timeout"}),
                         )
                     )
@@ -139,26 +164,23 @@ class ScanOrchestrator:
                     # One failing scanner must not abort the whole scan run.
                     scan_errors += 1
                     logger.exception(
-                        "Scanner %s failed on %s %s",
+                        "Scanner %s failed on %s",
                         scanner.name,
-                        endpoint.method,
-                        endpoint.path,
+                        endpoint_url,
                     )
                     session.add(
                         Evidence(
                             scan_id=scan.id,
                             scanner_name=scanner.name,
-                            request_data=(
-                                f"{endpoint.method} "
-                                f"{target.base_url}{endpoint.path}"
-                            ),
+                            request_data=endpoint_url,
                             response_data=json.dumps({"error": str(exc)}),
                         )
                     )
                     continue
                 # Collapse true duplicates (same scanner, same endpoint, same
-                # issue) while keeping per-endpoint findings distinct.
-                endpoint_url = f"{endpoint.method} {target.base_url}{endpoint.path}"
+                # issue) while keeping per-endpoint findings distinct. The key
+                # includes the HTTP method, so GET /a and DELETE /a never
+                # collapse into one another.
                 unique_findings = [
                     finding
                     for finding in scanner_findings
@@ -188,7 +210,12 @@ class ScanOrchestrator:
                             title=finding.title,
                             description=finding.description,
                             severity=finding.severity.value,
-                            endpoint=f"{target.base_url}{endpoint.path}",
+                            # Persist the same method-qualified identifier the
+                            # deduplicator keys on. Storing the bare URL here
+                            # would make two distinct operations on one path
+                            # (e.g. GET and PUT /projects/{id}) render as
+                            # identical rows, which is a misleading duplicate.
+                            endpoint=endpoint_url,
                             evidence_id=evidence.id,
                             # Fall back to the registered mapping so a
                             # third-party scanner can never persist a finding
@@ -198,6 +225,10 @@ class ScanOrchestrator:
                                 or category_for_scanner(scanner.name)
                             ),
                             confidence=finding.confidence.value,
+                            # Persist the scanner's own proof text; without it
+                            # the report can only show the endpoint URL and a
+                            # finding count.
+                            evidence_text=finding.evidence,
                         )
                     )
 

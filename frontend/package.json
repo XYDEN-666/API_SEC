@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:mock": "node scripts/mock-api.mjs",
+    "preview:mock": "node scripts/preview-mock.mjs",
     "build": "tsc && vite build",
+    "test": "node tests/run.mjs",
+    "test:ui": "node scripts/ui-smoke.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -18,14 +18,13 @@ the scanner is driven directly. The scanner never touches the database — the
 orchestrator persists its ``evidence_summary`` into the evidence row.
 """
 
-import base64
 import logging
 import re
 from itertools import combinations
 
 import httpx
 
-from app.core.crypto import decrypt_value
+from app.scanners.auth import auth_headers
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
 from app.services.owasp_mapping import category_for_scanner
 
@@ -103,7 +102,7 @@ class IDORScanner(BaseScanner):
             for identity in identities:
                 try:
                     response = await client.get(
-                        url, headers=_auth_headers(identity)
+                        url, headers=auth_headers(identity)
                     )
                     outcomes.append(
                         {
@@ -185,18 +184,6 @@ class IDORScanner(BaseScanner):
                         )
                     )
         return findings
-
-
-def _auth_headers(credential) -> dict[str, str]:
-    """Build request headers for a credential (decryption is internal only)."""
-    value = decrypt_value(credential.encrypted_value)
-    auth_type = credential.auth_type.lower()
-    if auth_type == "bearer":
-        return {"Authorization": f"Bearer {value}"}
-    if auth_type == "basic":
-        encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
-        return {"Authorization": f"Basic {encoded}"}
-    return {"X-API-Key": value}  # api_key and default
 
 
 def _parse_json(response: httpx.Response) -> object:

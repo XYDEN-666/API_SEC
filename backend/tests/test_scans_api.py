@@ -4,11 +4,13 @@ import asyncio
 import json
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
-from app.models import Target
+from app.models import Scan, Target
+from app.routers import scans as scans_router
 from app.services.orchestrator import ScanOrchestrator
 
 PASSWORD = "CorrectHorse42!"
@@ -48,9 +50,57 @@ def _create_project_with_target(client, token: str) -> int:
     return target.json()["id"]
 
 
-def test_start_scan_returns_scan_id_immediately(client) -> None:
+class _RecordingTask:
+    """Stand-in for the Celery task: records the enqueue, runs nothing."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, int]] = []
+
+    def delay(self, scan_id: int, target_id: int) -> None:
+        self.calls.append((scan_id, target_id))
+
+
+def _load_scan(scan_id: int) -> Scan | None:
+    """Read a scan row on its own engine (TestClient's loop is closed)."""
+
+    async def _run() -> Scan | None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                return await session.get(Scan, scan_id)
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(_run())
+
+
+def _scans_for_target(target_id: int) -> list[Scan]:
+    async def _run() -> list[Scan]:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                return list(
+                    await session.scalars(
+                        select(Scan)
+                        .where(Scan.target_id == target_id)
+                        .order_by(Scan.id.desc())
+                    )
+                )
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(_run())
+
+
+def test_start_scan_returns_real_scan_id_immediately(
+    client, monkeypatch
+) -> None:
+    """The response carries the DB scan id, and the row exists before the
+    worker is enqueued so the UI can poll that exact scan."""
     _, token = _register(client, _email("owner"))
     target_id = _create_project_with_target(client, token)
+    task = _RecordingTask()
+    monkeypatch.setattr(scans_router, "run_scan", task)
 
     started = client.post(
         f"/targets/{target_id}/scans", headers=_auth(token)
@@ -59,7 +109,39 @@ def test_start_scan_returns_scan_id_immediately(client) -> None:
     assert started.status_code == 202
     body = started.json()
     assert body["status"] == "queued"
-    assert len(body["scan_id"]) > 20  # celery task id (uuid)
+    assert isinstance(body["scan_id"], int)
+
+    # A real, pollable row was created for this target...
+    scan = _load_scan(body["scan_id"])
+    assert scan is not None
+    assert scan.target_id == target_id
+    assert scan.status == "queued"
+    assert scan.finished_at is None
+
+    # ...and the worker was handed that same id, not a Celery task uuid.
+    assert task.calls == [(body["scan_id"], target_id)]
+
+
+def test_start_scan_marks_scan_failed_when_broker_unreachable(
+    client, monkeypatch
+) -> None:
+    """A scan that cannot be queued must not be left stuck as "queued"."""
+    _, token = _register(client, _email("owner"))
+    target_id = _create_project_with_target(client, token)
+
+    class _BrokenTask:
+        def delay(self, scan_id: int, target_id: int) -> None:
+            raise RuntimeError("broker down")
+
+    monkeypatch.setattr(scans_router, "run_scan", _BrokenTask())
+
+    response = client.post(f"/targets/{target_id}/scans", headers=_auth(token))
+
+    assert response.status_code == 503
+    scans = _scans_for_target(target_id)
+    assert len(scans) == 1
+    assert scans[0].status == "failed"
+    assert scans[0].finished_at is not None
 
 
 def test_start_scan_scoped_to_owner_and_requires_auth(client) -> None:

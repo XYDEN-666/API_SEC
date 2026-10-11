@@ -137,3 +137,43 @@ def test_targets_require_authentication(client) -> None:
         == 401
     )
     assert client.delete("/targets/1").status_code == 401
+
+
+def test_target_rejects_non_http_base_url(client) -> None:
+    """The API enforces the same http(s)-only rule as the web form.
+
+    A stored non-HTTP URL would make every scanner silently no-op, so it must
+    be rejected at the point the target is created or updated.
+    """
+    _, token = _register(client, _email("owner"))
+    headers = _auth(token)
+    project_id = _create_project(client, token)
+
+    for bad in (
+        "ftp://api.example.com",
+        "api.example.com",
+        "file:///etc/passwd",
+        "javascript:alert(1)",
+        "https://",
+    ):
+        created = client.post(
+            f"/projects/{project_id}/targets",
+            json={"name": "Bad", "base_url": bad},
+            headers=headers,
+        )
+        assert created.status_code == 422, bad
+
+    created = client.post(
+        f"/projects/{project_id}/targets",
+        json={"name": "Good", "base_url": "https://api.example.com"},
+        headers=headers,
+    )
+    assert created.status_code == 201
+    target_id = created.json()["id"]
+
+    updated = client.put(
+        f"/targets/{target_id}",
+        json={"name": "Bad", "base_url": "ftp://api.example.com"},
+        headers=headers,
+    )
+    assert updated.status_code == 422

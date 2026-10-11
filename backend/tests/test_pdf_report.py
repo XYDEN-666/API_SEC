@@ -2,7 +2,18 @@
 
 import io
 
+import pytest
 from pypdf import PdfReader
+
+try:
+    import weasyprint  # noqa: F401
+except OSError as exc:  # pragma: no cover - host-dependent
+    # WeasyPrint needs native GTK/Pango. They ship in the Docker image but are
+    # not present on every dev machine, so skip rather than fail the suite.
+    pytest.skip(
+        f"WeasyPrint native libraries unavailable: {exc}",
+        allow_module_level=True,
+    )
 
 from tests.report_fixtures import (
     ReportScanner,

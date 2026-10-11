@@ -8,8 +8,8 @@
 
 ## What it checks
 
-Sends one request per endpoint and checks the response for four security
-headers:
+Sends one request to the target's base URL and checks the response for four
+security headers:
 
 | Header | Acceptable value |
 | --- | --- |
@@ -18,9 +18,16 @@ headers:
 | `Content-Security-Policy` | present and non-empty |
 | `X-Frame-Options` | `DENY` or `SAMEORIGIN` |
 
-Missing or misconfigured headers produce one finding per header per endpoint.
-If the target is unreachable the scanner returns no findings (and logs a
-warning) rather than failing the scan.
+Missing or misconfigured headers produce one finding per header **for the
+target**. If the target is unreachable the scanner returns no findings (and
+logs a warning) rather than failing the scan.
+
+This scanner is *target-level* (`target_level = True`): the orchestrator calls
+it once per target with `endpoint=None` instead of once per endpoint. Security
+headers describe the server, not an individual operation, so probing the base
+URL once keeps a host-wide gap to four findings instead of four per operation
+— a 32-operation API would otherwise report 128 rows for one misconfiguration.
+The findings' `endpoint` is therefore the target's base URL.
 
 ## Findings
 

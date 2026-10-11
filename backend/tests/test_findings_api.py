@@ -140,7 +140,7 @@ def test_findings_api_returns_scored_categorized_deduplicated(
     # 2 duplicate emissions per endpoint collapse to 1; 3 endpoints stay 3.
     assert len(body) == 3
     assert {item["endpoint"] for item in body} == {
-        f"http://127.0.0.1:9{path}" for path in ("/a", "/b", "/c")
+        f"GET http://127.0.0.1:9{path}" for path in ("/a", "/b", "/c")
     }
     for item in body:
         assert item["scan_id"] == scan_id
@@ -152,13 +152,20 @@ def test_findings_api_returns_scored_categorized_deduplicated(
         assert item["risk_score"] == 6.0
         assert item["risk_label"] == "High"
         assert item["evidence_id"] is not None
+        # The scanner's capture is returned by the API, so the UI can show
+        # real proof instead of only the endpoint and a count.
+        assert item["evidence_text"] is not None
 
 
 def test_findings_api_real_headers_scan_scored_and_categorized(
     client, http_multi_endpoint_target, unique_email
 ) -> None:
-    """A real HeaderScanner scan returns per-endpoint findings with the
-    correct category and risk score (MEDIUM+HIGH -> 6.0 / High)."""
+    """A real HeaderScanner scan returns host-level findings with the correct
+    category and risk score (MEDIUM+HIGH -> 6.0 / High).
+
+    The header scanner is target-level, so the three endpoints in the spec
+    produce one set of four findings, not one set per endpoint.
+    """
     base_url = http_multi_endpoint_target()
     _, token = _register(client, _email("owner"))
     target_id = _create_target(client, token, base_url, ["/a", "/b", "/c"])
@@ -168,9 +175,9 @@ def test_findings_api_real_headers_scan_scored_and_categorized(
     assert response.status_code == 200
     body = response.json()
 
-    # 4 missing security headers x 3 endpoints; none are duplicates because
-    # the endpoint differs.
-    assert len(body) == 12
+    # 4 missing security headers, reported once for the host.
+    assert len(body) == 4
+    assert {item["endpoint"] for item in body} == {base_url}
     for item in body:
         assert item["severity"] == "medium"
         assert item["owasp_category"] == "api8:2023"

@@ -117,9 +117,17 @@ def test_scan_persists_raw_scanner_findings(client, unique_email) -> None:
                     assert row.title
                     assert row.description
                     assert row.severity in {"low", "medium"}
-                    assert row.endpoint == "http://127.0.0.1:9/health"
+                    # Method-qualified: the finding identifier matches the
+                    # dedup key, which is scoped per HTTP method.
+                    assert row.endpoint == "GET http://127.0.0.1:9/health"
                     assert row.owasp_category == "api5:2023"
                     assert row.confidence in {"high", "medium"}
+                    # The scanner's own proof text is persisted, not just the
+                    # endpoint URL and a finding count.
+                    assert row.evidence_text in {
+                        "evidence-one",
+                        "evidence-two",
+                    }
                     assert row.created_at is not None
                     # Each finding links back to its evidence row.
                     evidence = await session.get(Evidence, row.evidence_id)

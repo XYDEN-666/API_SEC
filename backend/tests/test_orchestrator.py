@@ -4,12 +4,17 @@ import asyncio
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
-from app.models import Evidence, Scan, Target
+from app.models import Evidence, Finding as FindingRow, Scan, Target
 from app.scanners.base import BaseScanner, Confidence, Finding, Severity
+from app.scanners.headers import HeaderScanner
 from app.services.orchestrator import ScanOrchestrator
 
 PASSWORD = "CorrectHorse42!"
@@ -334,6 +339,129 @@ def test_slow_scanner_times_out(client, unique_email) -> None:
                 ).all()
                 assert len(evidence) == 1
                 assert "timeout" in (evidence[0].response_data or "")
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_target_level_scanner_runs_once_per_target(
+    client, http_multi_endpoint_target, unique_email
+) -> None:
+    """HeaderScanner opts into target-level scanning.
+
+    Headers are a property of the server, not of one operation, so a
+    host-wide gap must be reported once per header rather than once per
+    endpoint -- and its findings belong to the base URL, not to an arbitrary
+    endpoint of the spec.
+    """
+    import json
+
+    base_url = http_multi_endpoint_target()
+    _, token = _register(client, _email("owner"))
+    project = client.post(
+        "/projects", json={"name": "Target Level"}, headers=_auth(token)
+    )
+    assert project.status_code == 201
+    target = client.post(
+        f"/projects/{project.json()['id']}/targets",
+        json={"name": "API", "base_url": base_url},
+        headers=_auth(token),
+    )
+    assert target.status_code == 201
+    target_id = target.json()["id"]
+
+    spec = {
+        "openapi": "3.0.3",
+        "info": {"title": "API", "version": "1.0.0"},
+        "paths": {
+            path: {"get": {"responses": {"200": {"description": "ok"}}}}
+            for path in ("/a", "/b", "/c")
+        },
+    }
+    upload = client.post(
+        f"/targets/{target_id}/import-openapi",
+        files={
+            "file": (
+                "openapi.json",
+                json.dumps(spec).encode(),
+                "application/json",
+            )
+        },
+        headers=_auth(token),
+    )
+    assert upload.status_code == 200
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                target_obj = await session.get(Target, target_id)
+                assert target_obj is not None
+                result = await ScanOrchestrator([HeaderScanner()]).run_scan(
+                    target_obj, session
+                )
+                # Four missing headers for the host, not four per endpoint.
+                assert len(result.findings) == 4
+                rows = list(
+                    await session.scalars(
+                        select(FindingRow).where(
+                            FindingRow.scan_id == result.scan_id
+                        )
+                    )
+                )
+                assert len(rows) == 4
+                assert {row.endpoint for row in rows} == {base_url}
+                assert len({row.title for row in rows}) == 4
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_orchestrator_runs_preexisting_queued_scan(
+    client, unique_email
+) -> None:
+    """A scan the API created as "queued" is completed in place.
+
+    The scan endpoint creates the row up front so it can hand back a real,
+    pollable id; the orchestrator must finish that row rather than insert a
+    second one for the same run.
+    """
+    _, token = _register(client, _email("owner"))
+    target_id = _create_project_with_target(client, token)
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            # Mirror the app's session config: expire_on_commit=False, so the
+            # row stays readable after the orchestrator commits.
+            factory = async_sessionmaker(
+                engine, class_=AsyncSession, expire_on_commit=False
+            )
+            async with factory() as session:
+                target = await session.get(Target, target_id)
+                assert target is not None
+
+                queued = Scan(target_id=target_id, status="queued")
+                session.add(queued)
+                await session.commit()
+                await session.refresh(queued)
+                queued_id = queued.id
+
+                result = await ScanOrchestrator(scanners=[]).run_scan(
+                    target, session, scan_id=queued_id
+                )
+                assert result.scan_id == queued_id
+
+                rows = list(
+                    await session.scalars(
+                        select(Scan).where(Scan.target_id == target_id)
+                    )
+                )
+                assert [row.id for row in rows] == [queued_id]
+                assert rows[0].status == "completed"
+                assert rows[0].finished_at is not None
         finally:
             await engine.dispose()
 

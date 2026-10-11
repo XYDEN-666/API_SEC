@@ -24,6 +24,24 @@ SEVERITY_ORDER = {
 }
 
 
+def category_rank(category: str | None) -> int:
+    """Sort key for an OWASP API category identifier.
+
+    Categories are compared numerically (API1 < API2 < ... < API10) rather
+    than lexicographically, so ``api10:2023`` no longer sorts before
+    ``api2:2023`` in reports. Unknown or missing categories sort last.
+    """
+    if not category:
+        return 99
+    head = category.split(":", 1)[0]
+    if not head.startswith("api"):
+        return 99
+    try:
+        return int(head[3:])
+    except ValueError:
+        return 99
+
+
 @dataclass(frozen=True)
 class ReportEvidenceData:
     """Evidence excerpt attached to a single finding."""
@@ -48,6 +66,7 @@ class ReportFindingData:
     evidence_id: int | None
     owasp_category: str
     confidence: str
+    evidence_text: str | None
     created_at: datetime
     risk_score: float
     risk_label: str
@@ -97,9 +116,10 @@ class ReportData:
 async def build_report_data(session: AsyncSession, scan_id: int) -> ReportData:
     """Load a scan's findings and evidence and assemble :class:`ReportData`.
 
-    Findings are ordered by (OWASP category, severity, id) so the HTML
+    Findings are ordered by (OWASP category number, severity, id) so the HTML
     template can group consecutive rows by category while keeping the most
-    severe finding first within each category.
+    severe finding first within each category. Categories are ranked
+    numerically, so API1 < API2 < ... < API10.
     """
     scan = await session.scalar(select(Scan).where(Scan.id == scan_id))
     if scan is None:
@@ -152,6 +172,7 @@ async def build_report_data(session: AsyncSession, scan_id: int) -> ReportData:
                 evidence_id=row.evidence_id,
                 owasp_category=row.owasp_category,
                 confidence=row.confidence,
+                evidence_text=row.evidence_text,
                 created_at=row.created_at,
                 risk_score=score,
                 risk_label=risk_label(score),
@@ -171,7 +192,7 @@ async def build_report_data(session: AsyncSession, scan_id: int) -> ReportData:
 
     findings.sort(
         key=lambda f: (
-            f.owasp_category,
+            category_rank(f.owasp_category),
             SEVERITY_ORDER.get(f.severity, 99),
             f.id,
         )

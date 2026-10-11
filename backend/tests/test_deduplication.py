@@ -16,7 +16,6 @@ from app.scanners.base import (
     Finding as ScannerFinding,
     Severity,
 )
-from app.scanners.headers import HeaderScanner
 from app.services.deduplication import (
     FindingDeduplicator,
     finding_dedup_key,
@@ -48,7 +47,11 @@ def _register(client, email: str) -> tuple[int, str]:
 
 
 def _create_target(
-    client, token: str, base_url: str, paths: list[str]
+    client,
+    token: str,
+    base_url: str,
+    paths: list[str],
+    methods: list[str] | None = None,
 ) -> int:
     project = client.post(
         "/projects", json={"name": "Dedup Project"}, headers=_auth(token)
@@ -66,7 +69,10 @@ def _create_target(
         "openapi": "3.0.3",
         "info": {"title": "API", "version": "1.0.0"},
         "paths": {
-            path: {"get": {"responses": {"200": {"description": "ok"}}}}
+            path: {
+                method: {"responses": {"200": {"description": "ok"}}}
+                for method in (methods or ["get"])
+            }
             for path in paths
         },
     }
@@ -96,6 +102,22 @@ def _finding(**overrides) -> ScannerFinding:
     }
     defaults.update(overrides)
     return ScannerFinding(**defaults)
+
+
+class PerEndpointScanner(BaseScanner):
+    """Reports one fixed issue per endpoint.
+
+    Stands in for a scanner that has *not* opted into target-level scanning,
+    so the per-endpoint plumbing (one call per operation, method-qualified
+    identifiers) can be exercised independently of HeaderScanner, which is
+    now called once per target.
+    """
+
+    name = "headers"
+    description = "Test double for a per-endpoint scanner."
+
+    async def scan(self, target, endpoint, credentials):
+        return [_finding()]
 
 
 def test_signature_normalizes_whitespace_and_case() -> None:
@@ -141,7 +163,7 @@ def test_deduplicator_collapses_repeats_keeps_distinct() -> None:
 def test_same_issue_across_endpoints_stays_distinct(
     client, http_multi_endpoint_target, unique_email
 ) -> None:
-    """Three endpoints missing the same header produce three rows, one per
+    """Three endpoints reporting the same issue produce three rows, one per
     endpoint -- the endpoint component of the dedup key keeps them apart."""
     base_url = http_multi_endpoint_target()
     _, token = _register(client, _email("owner"))
@@ -153,9 +175,9 @@ def test_same_issue_across_endpoints_stays_distinct(
             async with AsyncSession(bind=engine) as session:
                 target_obj = await session.get(Target, target_id)
                 assert target_obj is not None
-                result = await ScanOrchestrator([HeaderScanner()]).run_scan(
-                    target_obj, session
-                )
+                result = await ScanOrchestrator(
+                    [PerEndpointScanner()]
+                ).run_scan(target_obj, session)
                 rows = list(
                     await session.scalars(
                         select(Finding).where(
@@ -163,16 +185,58 @@ def test_same_issue_across_endpoints_stays_distinct(
                         )
                     )
                 )
-                # 4 missing security headers x 3 endpoints, none collapsed.
-                assert len(rows) == 12
-                xfo = [
-                    row for row in rows
-                    if row.title == "Missing X-Frame-Options"
-                ]
-                assert len(xfo) == 3
-                assert {row.endpoint for row in xfo} == {
-                    f"{base_url}{path}" for path in ("/a", "/b", "/c")
+                # One issue per endpoint: three endpoints, none collapsed.
+                assert len(rows) == 3
+                assert {row.endpoint for row in rows} == {
+                    f"GET {base_url}{path}" for path in ("/a", "/b", "/c")
                 }
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_one_path_with_several_methods_persists_distinct_rows(
+    client, http_multi_endpoint_target, unique_email
+) -> None:
+    """One path scanned under GET, PUT and DELETE keeps a row per method.
+
+    Regression test: the dedup key includes the HTTP method, but the stored
+    ``endpoint`` used to omit it, so these rows persisted with identical
+    titles *and* identical endpoints -- duplicates to anyone reading the
+    findings list or the report.
+    """
+    base_url = http_multi_endpoint_target()
+    _, token = _register(client, _email("owner"))
+    target_id = _create_target(
+        client, token, base_url, ["/a"], methods=["get", "put", "delete"]
+    )
+
+    async def _run() -> None:
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with AsyncSession(bind=engine) as session:
+                target_obj = await session.get(Target, target_id)
+                assert target_obj is not None
+                result = await ScanOrchestrator(
+                    [PerEndpointScanner()]
+                ).run_scan(target_obj, session)
+                rows = list(
+                    await session.scalars(
+                        select(Finding).where(
+                            Finding.scan_id == result.scan_id
+                        )
+                    )
+                )
+                # One issue per operation: three operations on one path.
+                assert len(rows) == 3
+                assert {row.endpoint for row in rows} == {
+                    f"{method.upper()} {base_url}/a"
+                    for method in ("get", "put", "delete")
+                }
+                # No two rows in the scan share a (title, endpoint) pair.
+                visible = [(row.title, row.endpoint) for row in rows]
+                assert len(visible) == len(set(visible))
         finally:
             await engine.dispose()
 

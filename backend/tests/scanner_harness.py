@@ -36,6 +36,16 @@ REQUIRED_FIELDS = (
     "confidence",
 )
 
+#: A response carrying every header the HeaderScanner checks, so a scan of the
+#: recording fixture produces no findings and the test can focus on what was
+#: sent.
+SECURE_HEADERS = {
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'self'",
+    "X-Frame-Options": "DENY",
+}
+
 
 def assert_findings_shape(findings: list[Finding]) -> None:
     """Assert every finding carries the standard, valid fields."""
@@ -295,3 +305,39 @@ async def run_scanner_against_target(
     findings = await scanner.scan(target, endpoint, credentials)
     assert_findings_shape(findings)
     return findings
+
+
+@pytest.fixture
+def http_recording_target():
+    """Target that records the headers of every request it receives.
+
+    Yields a ``_start()`` factory that returns ``(base_url, hits)``, where
+    ``hits`` is a live list of lower-cased header dicts in arrival order. The
+    fixture answers with :data:`SECURE_HEADERS`, so a scan produces no
+    findings and the test can assert purely on what the scanner sent.
+    """
+    started: list[tuple[uvicorn.Server, threading.Thread]] = []
+
+    def _start() -> tuple[str, list[dict[str, str]]]:
+        hits: list[dict[str, str]] = []
+        app = FastAPI()
+
+        def _record(request: Request) -> JSONResponse:
+            hits.append(
+                {key.lower(): value for key, value in request.headers.items()}
+            )
+            return JSONResponse({"ok": True}, headers=SECURE_HEADERS)
+
+        methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
+        app.add_api_route("/", _record, methods=methods)
+        app.add_api_route("/{rest:path}", _record, methods=methods)
+
+        base_url, server, thread = _start_server(app)
+        started.append((server, thread))
+        return base_url, hits
+
+    yield _start
+
+    for server, thread in started:
+        server.should_exit = True
+        thread.join(timeout=10)

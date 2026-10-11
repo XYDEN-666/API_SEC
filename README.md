@@ -84,9 +84,93 @@ docker compose exec backend pytest -v     # backend tests
 docker compose exec backend alembic upgrade head   # manual migration
 ```
 
+Frontend (from `frontend/`):
+
+```bash
+npm run dev        # Vite dev server on :5173
+npm run build      # type-check + production bundle
+npm test           # unit tests for the domain/formatting helpers
+npm run test:ui    # headless-Chrome smoke test of the full user journey
+npm run dev:mock   # fixture API on :8001 for previewing the UI without Docker
+npm run preview:mock  # fixture API + dev server in one command
+```
+
+`npm run dev` finds the backend by itself: it probes `http://localhost:8000`
+(the Docker backend) and then `http://localhost:8001` (the fixture API) and
+uses the first one that answers, printing which it picked. Set
+`VITE_API_BASE_URL` to override that, and note the value is baked in at build
+time for `npm run build`.
+
+So the full stack is just:
+
+```bash
+docker compose up -d --build     # terminal 1
+cd frontend && npm run dev       # terminal 2
+```
+
+To preview the UI without PostgreSQL, Redis or Docker, run one command:
+
+```bash
+npm run preview:mock
+```
+
+It starts the fixture API on `:8001` and the dev server on `:5173`, then open
+<http://localhost:5173> — sign in with any email and an 8+ character password.
+Ctrl+C stops both. `npm run dev:mock` starts only the fixture API if you would
+rather run the two halves yourself.
+
+If neither backend is reachable the dev server says so and the UI loads with
+API calls failing, rather than silently pointing somewhere unexpected.
+
+`scripts/mock-api.mjs` is a development fixture only — in-memory data, no
+encryption, every token accepted. Never use it as a real backend.
+
 Migrations run automatically on backend startup, so the manual `alembic`
 command is only needed when you want to apply schema changes without
 restarting the container.
+
+## Running the backend without Docker (native)
+
+Docker is only needed for PostgreSQL and Redis. The backend, worker and tests
+can all run straight from a virtualenv, which is much faster to iterate on
+(no image rebuild per change) and works without the WeasyPrint system
+libraries that only the image ships.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+
+# Point the app at your PostgreSQL/Redis. If you keep the compose data
+# services, expose them first:  docker compose up -d postgres redis
+$env:DATABASE_URL = "postgresql+asyncpg://apishield:apishield@localhost:5432/apishield"
+$env:REDIS_URL     = "redis://localhost:6379/0"
+
+cd backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+
+# in a second terminal, same env vars and working directory:
+..\.venv\Scripts\python.exe -m celery -A app.core.celery_app.celery_app worker --pool=solo --loglevel=info
+```
+
+Then run the frontend as usual (`cd frontend && npm run dev`).
+
+Notes:
+
+- **Windows needs `--pool=solo`.** Celery's default prefork pool is not usable
+  on Windows, so the worker will not pick up scans without it.
+- **PDF export needs WeasyPrint's native libraries** (GTK/Pango). They are in
+  the Docker image but not on a stock machine. Without them the API and every
+  other route run normally; only `/scans/{id}/report.pdf` reports a clear
+  error. Use the container for PDF export, or install the libraries.
+- **Run the tests natively** with `cd backend` then
+  `..\.venv\Scripts\python.exe -m pytest -q`. The PDF module skips itself when
+  the native libraries are missing, so the suite stays green either way.
+- **Only one worker per queue.** If the compose `worker` container is still
+  running it shares the same Redis queue, so it may pick up scans instead of
+  your native worker. Stop it (`docker compose stop worker`) or set a
+  different `REDIS_URL` (e.g. `redis://localhost:6379/1`) for both the API and
+  the worker.
 
 ## Configuration
 
@@ -117,7 +201,15 @@ backend/
   alembic/      database migrations
   tests/        backend test suite
 frontend/
-  src/          React app (pages, components, API client)
+  src/
+    api/        typed API client (JWT kept in memory only)
+    components/ app shell, page header, design-system components (ui/)
+    hooks/      data loading, theme and document-title hooks
+    lib/        pure domain + formatting helpers (unit tested)
+    pages/      Dashboard, Projects, ProjectDetail, TargetDetail, ScanResults
+    styles/     design tokens, base, layout and component CSS
+  scripts/      fixture API + headless UI smoke test
+  tests/        node:test unit tests for src/lib
 docs/
   scanners/     per-scanner documentation
 docker-compose.yml
